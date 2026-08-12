@@ -10,9 +10,13 @@
 GET    /api/v1/status
 GET    /api/v1/settings
 PATCH  /api/v1/settings
+GET    /api/v1/diagnostics
+GET    /api/v1/diagnostics/export
 ```
 
 `status` 返回应用版本、schema 版本、FFmpeg 可用性和迁移/恢复状态，不得暴露文件系统秘密。
+
+`diagnostics` 预览支持诊断包，`diagnostics/export` 下载相同 JSON。两者都会脱敏 NVR 地址、凭据、secret 引用、Authorization header、RTSP locator、文件系统路径和原始上游 body；UI 会提示用户在分享前人工复核。
 
 ## NVR 与通道
 

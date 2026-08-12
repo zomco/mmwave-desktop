@@ -51,3 +51,10 @@
 ## 发布内容
 
 每个二进制版本包含应用版本、数据库迁移版本、FFmpeg 来源、第三方声明、受支持兼容矩阵、校验和文件及签名产物元数据。
+
+## 已实现自动化与当前门禁
+
+- `packaging/windows/build.ps1 -Mode Verify` 运行仓库/安全、Python 模块和前端检查。
+- `-Mode Release` 构建 PyInstaller one-folder 应用、签名、生成按用户安装的 Inno Setup 安装器、CycloneDX SBOM 和校验和；缺少显式输入时拒绝继续。
+- `packaging/windows/smoke.ps1` 隐藏启动打包进程，验证回环状态和 SQLite 初始化，然后删除隔离临时数据。
+- `release/manifest.json` 当前为 `release_ready=false`。在 ADR-0004 解决、记录 LGPL 兼容 FFmpeg 构建及哈希/声明、批准签名凭据前必须保持 false。

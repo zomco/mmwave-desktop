@@ -28,3 +28,9 @@ From this migration onward, TraceCue product decisions belong in this repository
 ## Follow-up
 
 Resolve ADR-0004 licensing before accepting external code, then begin M1. If new historical notes conflict with accepted ADRs, create a superseding ADR rather than silently merging assumptions.
+
+## Implementation migration 0.1.0
+
+Executable code now initializes Desktop SQLite schema version 1 on first start. New databases create the documented NVR, capability, channel, source, space/binding, interval, recording-span, job, clip and import tables. There was no prior executable database to migrate. A restart changes unfinished `running` jobs to `interrupted`; it never guesses that media work completed.
+
+Gateway owns a separate internal SQLite store for its always-on intervals and bounded diagnostics. Desktop never reads that database; data crosses via `timeline.v1`.

@@ -1,0 +1,19 @@
+TraceCue third-party notices (development baseline 0.1.0)
+
+This file records direct runtime/build dependencies. A release build also generates a
+CycloneDX SBOM from the exact Python environment and package-lock.json.
+
+FastAPI - MIT License - https://github.com/fastapi/fastapi
+Starlette - BSD-3-Clause License - https://github.com/Kludex/starlette
+Uvicorn - BSD-3-Clause License - https://github.com/Kludex/uvicorn
+Pydantic - MIT License - https://github.com/pydantic/pydantic
+React and React DOM - MIT License - https://github.com/facebook/react
+Vite - MIT License - https://github.com/vitejs/vite
+TypeScript - Apache-2.0 License - https://github.com/microsoft/TypeScript
+Vitest - MIT License - https://github.com/vitest-dev/vitest
+PyInstaller - GPL-2.0-or-later with an exception permitting distribution of bundled applications - https://pyinstaller.org/
+Inno Setup - custom redistribution license; review current terms before release - https://jrsoftware.org/isinfo.php
+
+FFmpeg/FFprobe are not checked into this repository. Release remains blocked until the
+owner selects a pinned, verifiable LGPL-compatible build, records its source URL and
+SHA-256 hashes in release/manifest.json, and includes its exact license/source-offer notices.

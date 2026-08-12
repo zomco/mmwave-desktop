@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DeviceInfo xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <deviceName>Redacted NVR</deviceName>
+  <model>DS-REDACTED</model>
+  <serialNumber>REDACTED-SERIAL</serialNumber>
+  <firmwareVersion>V0.0.0 fixture</firmwareVersion>
+</DeviceInfo>
+

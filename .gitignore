@@ -11,6 +11,7 @@ build/
 
 # Node / frontend
 node_modules/
+.npm-cache/
 coverage/
 frontend-dist/
 
@@ -24,7 +25,7 @@ clips/
 
 # Packaging and local artifacts
 artifacts/
-release/
+release/output/
 *.msi
 *.msix
 

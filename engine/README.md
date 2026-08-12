@@ -24,3 +24,12 @@ The JSON contract uses `timeline.v1`. Library releases follow SemVer once extern
 ## First executable slice
 
 Validate the checked-in example, reject invalid timezone/range/channel references, and prove idempotent import by `(source_id, interval.id)`.
+
+## Implemented baseline
+
+`tracecue-engine` 0.1.0 implements immutable timeline value types, strict and size-bounded `timeline.v1` reading/writing, explicit-offset timestamps, deterministic IDs, quality-gate results, media windows, filtering, deterministic merge and idempotent upsert primitives. It has no Desktop, Gateway, Hikvision, FFmpeg or HA dependency.
+
+```powershell
+python -m pip install -e "./engine[dev]"
+python -m pytest engine/tests
+```

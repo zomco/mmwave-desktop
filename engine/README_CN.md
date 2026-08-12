@@ -24,3 +24,12 @@ JSON 契约使用 `timeline.v1`。出现外部消费者后，库发布遵循 Sem
 ## 首个可执行切片
 
 校验仓库中的示例，拒绝无时区、时间范围错误和通道引用错误，并证明按 `(source_id, interval.id)` 幂等导入。
+
+## 已实现基线
+
+`tracecue-engine` 0.1.0 已实现不可变时间轴值类型、严格且限制大小的 `timeline.v1` 读写、显式时区时间戳、确定性 ID、质量门结果、媒体窗口、过滤、确定性合并和幂等 upsert 基础能力。它不依赖 Desktop、Gateway、海康、FFmpeg 或 HA。
+
+```powershell
+python -m pip install -e "./engine[dev]"
+python -m pytest engine/tests
+```

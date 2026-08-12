@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "release_ready": false,
+  "license_decision": "blocked by unresolved ADR-0004",
+  "ffmpeg_version": null,
+  "ffmpeg_source_url": null,
+  "ffmpeg_sha256": null,
+  "ffprobe_sha256": null,
+  "artifacts": [
+    "TraceCue-0.1.0-win-x64.exe",
+    "checksums.sha256",
+    "sbom.cdx.json"
+  ]
+}
+

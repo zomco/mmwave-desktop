@@ -30,8 +30,10 @@ Documentation is part of the product contract. Planned and implemented behavior 
 ## Development and operations
 
 - [Developer onboarding](development/getting-started.md)
+- [Implementation status](development/implementation-status.md)
 - [Testing strategy](development/testing.md)
 - [Windows and FFmpeg packaging](operations/windows-packaging.md)
+- [Dependency assessment](operations/dependency-assessment.md)
 - [CI/CD](operations/ci-cd.md)
 - [Compatibility testing](operations/compatibility-testing.md)
 - [Migration record](operations/migration-record.md)

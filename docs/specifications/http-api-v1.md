@@ -10,9 +10,13 @@ All routes are same-origin under `/api/v1`. JSON timestamps are RFC 3339 with ex
 GET    /api/v1/status
 GET    /api/v1/settings
 PATCH  /api/v1/settings
+GET    /api/v1/diagnostics
+GET    /api/v1/diagnostics/export
 ```
 
 `status` reports application version, schema version, FFmpeg availability and migration/recovery state. It must not expose filesystem secrets.
+
+`diagnostics` previews a support bundle; `diagnostics/export` downloads the same JSON. Both redact NVR addresses, credentials, secret references, authorization headers, RTSP locators, filesystem paths and raw upstream bodies. The UI tells the user to review the bundle before sharing.
 
 ## NVRs and channels
 

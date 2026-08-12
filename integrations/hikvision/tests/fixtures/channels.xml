@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VideoInputChannelList xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <VideoInputChannel>
+    <id>1</id>
+    <inputPort>1</inputPort>
+    <name>Front door</name>
+    <enabled>true</enabled>
+    <streamingChannelID>101</streamingChannelID>
+    <streamingChannelID>102</streamingChannelID>
+  </VideoInputChannel>
+  <VideoInputChannel>
+    <id>2</id>
+    <name>Hall</name>
+    <enabled>false</enabled>
+    <streamingChannelID>201</streamingChannelID>
+  </VideoInputChannel>
+</VideoInputChannelList>
+

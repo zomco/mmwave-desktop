@@ -20,6 +20,8 @@ Required future branch protection:
 
 `security.yml` runs a lightweight secret/path audit on pushes and a weekly schedule. Pull requests also use dependency review. Add CodeQL languages when executable Python/TypeScript code lands; do not run a misleading empty scan.
 
+Executable Python and TypeScript have landed, so security CI now runs CodeQL for both languages and Dependabot covers npm plus each Python module.
+
 Dependabot currently manages GitHub Actions. Add npm/pip ecosystems only after their manifests exist.
 
 ## Release workflow

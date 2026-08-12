@@ -22,7 +22,15 @@ TraceCue is independent from `mmwave-component`, `mmwave-card`, `mmwave-fusion`,
 
 ## Repository status
 
-This repository currently contains the product, architecture and delivery contracts needed to begin implementation. Executable product code has not yet landed. See the [roadmap](docs/product/roadmap.md) and [documentation map](docs/README.md).
+The repository now contains an executable `0.1.0` development baseline:
+
+- a dependency-light Engine implementing strict `timeline.v1`, deterministic interval operations and quality gates;
+- a bounded, fixture-tested Hikvision ISAPI adapter;
+- a loopback FastAPI/SQLite Desktop service plus React/Vite UI, persistent jobs, timeline mapping and FFmpeg clip pipeline;
+- an always-on Gateway core with bounded JSON-line acquisition, clock health, traverse detection, persistence and export;
+- Windows one-folder/installer, signing, SBOM and smoke-test automation with an explicit release gate.
+
+Local and synthetic tests validate the software contracts. No Hikvision model/firmware or radar model is yet commercially certified, the repository does not contain FFmpeg binaries, and binary publication remains blocked by ADR-0004, signing material and hardware evidence. See the [implementation status](docs/development/implementation-status.md), [roadmap](docs/product/roadmap.md) and [documentation map](docs/README.md).
 
 ## Start here
 

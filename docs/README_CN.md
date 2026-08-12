@@ -30,8 +30,10 @@
 ## 开发与运维
 
 - [开发者上手](development/getting-started_CN.md)
+- [实现状态](development/implementation-status_CN.md)
 - [测试策略](development/testing_CN.md)
 - [Windows 与 FFmpeg 打包](operations/windows-packaging_CN.md)
+- [依赖评估](operations/dependency-assessment_CN.md)
 - [CI/CD](operations/ci-cd_CN.md)
 - [兼容性测试](operations/compatibility-testing_CN.md)
 - [迁移记录](operations/migration-record_CN.md)

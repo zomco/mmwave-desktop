@@ -18,6 +18,7 @@ jobs:
     outputs:
       engine: ${{ steps.detect.outputs.engine }}
       gateway: ${{ steps.detect.outputs.gateway }}
+      hikvision: ${{ steps.detect.outputs.hikvision }}
       desktop_backend: ${{ steps.detect.outputs.desktop_backend }}
       desktop_frontend: ${{ steps.detect.outputs.desktop_frontend }}
       windows: ${{ steps.detect.outputs.windows }}
@@ -29,6 +30,7 @@ jobs:
         run: |
           [[ -f engine/pyproject.toml ]] && echo "engine=true" >> "$GITHUB_OUTPUT" || echo "engine=false" >> "$GITHUB_OUTPUT"
           [[ -f gateway/pyproject.toml ]] && echo "gateway=true" >> "$GITHUB_OUTPUT" || echo "gateway=false" >> "$GITHUB_OUTPUT"
+          [[ -f integrations/hikvision/pyproject.toml ]] && echo "hikvision=true" >> "$GITHUB_OUTPUT" || echo "hikvision=false" >> "$GITHUB_OUTPUT"
           [[ -f desktop/backend/pyproject.toml ]] && echo "desktop_backend=true" >> "$GITHUB_OUTPUT" || echo "desktop_backend=false" >> "$GITHUB_OUTPUT"
           [[ -f desktop/frontend/package-lock.json ]] && echo "desktop_frontend=true" >> "$GITHUB_OUTPUT" || echo "desktop_frontend=false" >> "$GITHUB_OUTPUT"
           [[ -f packaging/windows/build.ps1 ]] && echo "windows=true" >> "$GITHUB_OUTPUT" || echo "windows=false" >> "$GITHUB_OUTPUT"
@@ -57,8 +59,24 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: engine/pyproject.toml
-      - run: python -m pip install -e "./engine[dev]"
+      - run: python -m pip install -r requirements-dev.lock.txt
+      - run: python -m pip install --no-build-isolation --no-deps -e ./engine
       - run: python -m pytest engine/tests
+
+  hikvision:
+    needs: [repository-contract, detect-modules]
+    if: ${{ needs.detect-modules.outputs.hikvision == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.lock.txt
+      - run: python -m pip install -r requirements-dev.lock.txt
+      - run: python -m pip install --no-build-isolation --no-deps -e ./integrations/hikvision
+      - run: python -m pytest integrations/hikvision/tests
 
   gateway:
     needs: [repository-contract, detect-modules]
@@ -71,7 +89,8 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: gateway/pyproject.toml
-      - run: python -m pip install -e "./gateway[dev]"
+      - run: python -m pip install -r requirements-dev.lock.txt
+      - run: python -m pip install --no-build-isolation --no-deps -e ./engine -e ./gateway
       - run: python -m pytest gateway/tests
 
   desktop-backend:
@@ -85,7 +104,8 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: desktop/backend/pyproject.toml
-      - run: python -m pip install -e "./desktop/backend[dev]"
+      - run: python -m pip install -r requirements-dev.lock.txt
+      - run: python -m pip install --no-build-isolation --no-deps -e ./engine -e ./integrations/hikvision -e ./desktop/backend
       - run: python -m pytest desktop/backend/tests
 
   desktop-frontend:
@@ -99,8 +119,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/frontend/package-lock.json
-      - run: npm ci --prefix desktop/frontend
-      - run: npm test --prefix desktop/frontend -- --run
+      - run: npm ci --prefix desktop/frontend --cache desktop/frontend/.npm-cache
+      - run: npm test --prefix desktop/frontend
       - run: npm run build --prefix desktop/frontend
 
   windows-smoke:
@@ -115,7 +135,7 @@ jobs:
 
   quality-gate:
     if: ${{ always() }}
-    needs: [detect-modules, repository-contract, engine, gateway, desktop-backend, desktop-frontend, windows-smoke]
+    needs: [detect-modules, repository-contract, engine, hikvision, gateway, desktop-backend, desktop-frontend, windows-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Fail on any failed or cancelled dependency

@@ -48,6 +48,25 @@ SECRET_PATTERNS = {
     "credential URL": re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s/@]+@", re.I),
 }
 
+EXCLUDED_PARTS = {
+    ".git",
+    ".npm-cache",
+    ".pytest_cache",
+    ".venv",
+    "__pycache__",
+    "artifacts",
+    "build",
+    "dist",
+    "node_modules",
+}
+
+
+def excluded(path: Path) -> bool:
+    relative = path.relative_to(ROOT)
+    return bool(EXCLUDED_PARTS.intersection(relative.parts)) or any(
+        part.endswith(".egg-info") for part in relative.parts
+    )
+
 
 def error(errors: list[str], message: str) -> None:
     errors.append(message)
@@ -68,7 +87,7 @@ def paired_path(path: Path) -> Path:
 def check_bilingual_pairs(errors: list[str]) -> None:
     for path in ROOT.rglob("*.md"):
         relative = path.relative_to(ROOT)
-        if ".git" in relative.parts or ".github" in relative.parts:
+        if excluded(path) or ".github" in relative.parts:
             continue
         counterpart = paired_path(path)
         if not counterpart.exists():
@@ -85,7 +104,7 @@ def clean_link_target(raw: str) -> str:
 def check_markdown_links(errors: list[str]) -> None:
     for path in ROOT.rglob("*.md"):
         relative = path.relative_to(ROOT)
-        if ".git" in relative.parts:
+        if excluded(path):
             continue
         text = path.read_text(encoding="utf-8")
         for match in MARKDOWN_LINK.finditer(text):
@@ -126,7 +145,7 @@ def parse_timestamp(value: object, label: str, errors: list[str]) -> datetime | 
 
 def check_json_and_timeline(errors: list[str]) -> None:
     for path in ROOT.rglob("*.json"):
-        if ".git" not in path.relative_to(ROOT).parts:
+        if not excluded(path):
             load_json(path, errors)
 
     example_path = ROOT / "contracts/timeline/v1/examples/minimal.json"
@@ -186,13 +205,12 @@ def check_json_and_timeline(errors: list[str]) -> None:
 
 
 def iter_text_files() -> list[Path]:
-    excluded_parts = {".git", "node_modules", ".venv", "artifacts"}
     allowed_suffixes = {".md", ".py", ".json", ".yml", ".yaml", ".toml", ".txt"}
     return [
         path
         for path in ROOT.rglob("*")
         if path.is_file()
-        and not excluded_parts.intersection(path.relative_to(ROOT).parts)
+        and not excluded(path)
         and path.suffix.lower() in allowed_suffixes
     ]
 
@@ -215,7 +233,7 @@ def check_text_hygiene(errors: list[str]) -> None:
 def check_security(errors: list[str]) -> None:
     forbidden_suffixes = {".pfx", ".p12", ".key", ".pem"}
     for path in ROOT.rglob("*"):
-        if path.is_file() and ".git" not in path.relative_to(ROOT).parts:
+        if path.is_file() and not excluded(path):
             if path.suffix.lower() in forbidden_suffixes:
                 error(errors, f"forbidden credential file: {path.relative_to(ROOT)}")
     for path in iter_text_files():
@@ -229,8 +247,11 @@ def check_release_readiness(errors: list[str]) -> None:
     required = (
         "packaging/windows/build.ps1",
         "packaging/windows/smoke.ps1",
+        "packaging/windows/tracecue.spec",
+        "packaging/windows/TraceCue.iss",
         "release/manifest.json",
         "release/THIRD_PARTY_NOTICES.txt",
+        "scripts/release/generate_sbom.py",
     )
     for relative in required:
         if not (ROOT / relative).exists():
@@ -239,7 +260,16 @@ def check_release_readiness(errors: list[str]) -> None:
     if manifest_path.exists():
         manifest = load_json(manifest_path, errors)
         if isinstance(manifest, dict):
-            for key in ("version", "ffmpeg_version", "artifacts"):
+            if manifest.get("release_ready") is not True:
+                error(errors, "release manifest has not been approved (release_ready must be true)")
+            for key in (
+                "version",
+                "ffmpeg_version",
+                "ffmpeg_source_url",
+                "ffmpeg_sha256",
+                "ffprobe_sha256",
+                "artifacts",
+            ):
                 if not manifest.get(key):
                     error(errors, f"release manifest missing {key}")
 

@@ -22,7 +22,15 @@ TraceCue 运行时不依赖 `mmwave-component`、`mmwave-card`、`mmwave-fusion`
 
 ## 仓库状态
 
-仓库当前已经固化产品、架构和交付契约，供实现阶段开始使用；可执行产品代码尚未落地。请查看[路线图](docs/product/roadmap_CN.md)和[文档导航](docs/README_CN.md)。
+仓库现已包含可执行的 `0.1.0` 开发基线：
+
+- 低依赖 Engine，实现严格的 `timeline.v1`、确定性 Interval 运算和质量门；
+- 具有输入边界和 fixture 测试的海康 ISAPI 适配层；
+- 回环地址 FastAPI/SQLite Desktop 服务与 React/Vite UI、持久化作业、时间轴映射和 FFmpeg 出片流水线；
+- 常驻 Gateway 核心，包含有界 JSON-line 采集、时钟健康、穿越检测、持久化和导出；
+- Windows one-folder/安装器、签名、SBOM 和冒烟测试自动化，并设置显式发布门禁。
+
+本地与合成测试验证软件契约，但尚无海康型号/固件或雷达型号获得商业认证；仓库不包含 FFmpeg 二进制，二进制发布仍受 ADR-0004、签名材料和硬件证据阻塞。请查看[实现状态](docs/development/implementation-status_CN.md)、[路线图](docs/product/roadmap_CN.md)和[文档导航](docs/README_CN.md)。
 
 ## 从这里开始
 

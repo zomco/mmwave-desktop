@@ -4,15 +4,16 @@
 
 ## 当前状态
 
-仓库目前契约优先，可执行产品模块尚未落地，但首次检出仍应通过仓库校验。
+仓库现已包含可执行的 0.1.0 开发基线。软件契约和合成 fixture 可在无硬件环境测试；兼容性、编解码和安装器声明仍需要经授权硬件与发布证据。
 
 ## 前置要求
 
 - Git 2.40+；
 - Python 3.12+，用于仓库检查和建议的控制面；
-- 只有 `desktop/package.json` 出现后才需要 Node.js LTS；
+- Node.js LTS，用于 Desktop SPA；
 - Windows 11 或受支持 Windows 10 环境，用于产品冒烟测试；
 - 硬件工作需专用测试 NVR，禁止将生产凭据写入 fixture。
+- 真实媒体测试需要 FFmpeg/FFprobe；仓库刻意不下载或提交二进制。
 
 ## 首次检出
 
@@ -20,6 +21,12 @@
 git clone https://github.com/zomco/tracecue.git
 Set-Location tracecue
 python scripts/ci/verify_repo.py
+python -m pip install -r requirements-dev.lock.txt
+python -m pip install --no-build-isolation --no-deps -e ./engine -e ./integrations/hikvision -e ./gateway -e ./desktop/backend
+python -m pytest engine/tests integrations/hikvision/tests gateway/tests desktop/backend/tests
+npm ci --prefix desktop/frontend
+npm test --prefix desktop/frontend
+npm run build --prefix desktop/frontend
 ```
 
 然后按顺序阅读：

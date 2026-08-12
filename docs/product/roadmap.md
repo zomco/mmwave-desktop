@@ -4,6 +4,8 @@
 
 The roadmap is organized by evidence-producing vertical slices, not feature count. Dates are deliberately omitted until the first hardware matrix is available.
 
+Software implementation status is tracked separately from hardware/product exit evidence. As of the 0.1.0 development baseline, the M1-M5 software paths exist, but their hardware, release and labelled-data exit criteria below remain open. See the [implementation status](../development/implementation-status.md).
+
 ## M0 — Repository and contracts
 
 - Product, architecture, security and AI collaboration baseline.

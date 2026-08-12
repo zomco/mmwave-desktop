@@ -17,3 +17,12 @@ resolve_media(request) -> MediaResolution
 The implementation must support fixture-based parsers, bounded pagination, Digest authentication, redacted diagnostics and model/firmware evidence. `search_intervals` may be unsupported while `search_recordings` works.
 
 Never expose raw playback locators to the browser or persist credential-bearing URLs. Official native SDK support, if required for specific models, belongs in an isolated bridge process rather than the main Web process.
+
+## Implemented baseline
+
+`tracecue-hikvision` 0.1.0 provides a standard-library Digest transport with explicit TLS verification policy, bounded response reads, DTD/entity rejection, XML depth limits, device/time/channel parsing, evidence snapshots, bounded recording pagination, non-progress detection, safe RTSP locator handling and recording-gap resolution. Checked-in fixtures are synthetic and explicitly are not hardware support evidence.
+
+```powershell
+python -m pip install -e "./integrations/hikvision[dev]"
+python -m pytest integrations/hikvision/tests
+```

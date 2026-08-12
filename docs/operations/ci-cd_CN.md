@@ -18,7 +18,7 @@ CI/CD 面向单人维护优化，同时避免某台个人电脑成为唯一事�
 
 ## 安全自动化
 
-`security.yml` 在 push 和每周计划运行轻量秘密/路径审计，PR 另外执行依赖审查。可执行 Python/TypeScript 代码落地后再加入 CodeQL 语言，禁止用空扫描制造安全假象。
+`security.yml` 在 push 和每周计划运行轻量秘密/路径审计，PR 另外执行依赖审查。可执行 Python 和 TypeScript 已经落地，因此安全 CI 现在对两种语言运行 CodeQL，Dependabot 也覆盖 npm 和每个 Python 模块。
 
 Dependabot 当前只管理 GitHub Actions；npm/pip 清单出现后再添加对应生态。
 

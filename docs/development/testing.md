@@ -19,14 +19,24 @@ Always:
 python scripts/ci/verify_repo.py
 ```
 
-Once manifests land, each module README/manifest becomes authoritative. CI expects conventional commands:
+Each module README/manifest is authoritative. Install the exact shared development environment first:
+
+```powershell
+python -m pip install -r requirements-dev.lock.txt
+python -m pip install --no-build-isolation --no-deps -e ./engine -e ./integrations/hikvision -e ./gateway -e ./desktop/backend
+```
+
+CI uses these conventional commands:
 
 ```text
 engine:  python -m pytest engine/tests
+Hikvision: python -m pytest integrations/hikvision/tests
 gateway: python -m pytest gateway/tests
 desktop backend: python -m pytest desktop/backend/tests
 desktop frontend: npm ci --prefix desktop/frontend && npm test --prefix desktop/frontend && npm run build --prefix desktop/frontend
 ```
+
+`packaging/windows/build.ps1 -Mode Verify` runs all software checks on Windows. `-Mode Release` is intentionally blocked unless licensing, FFmpeg hashes/notices and signing inputs are explicitly satisfied.
 
 Do not add placeholder tests that only assert framework startup. A test should protect a product invariant, protocol observation or failure mode.
 

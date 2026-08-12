@@ -28,3 +28,9 @@
 ## 后续
 
 接受外部代码前解决 ADR-0004，然后开始 M1。若后续历史资料与已接受 ADR 冲突，应新增取代 ADR，而不是静默混合假设。
+
+## 0.1.0 实现迁移
+
+可执行代码现会在首次启动时初始化 Desktop SQLite schema version 1。新数据库创建文档约定的 NVR、能力、通道、来源、空间/绑定、Interval、录像段、作业、片段和导入表。此前没有可执行数据库需要迁移。重启时，未完成的 `running` 作业会改为 `interrupted`；系统不会猜测媒体工作已经完成。
+
+Gateway 为常驻 Interval 和有界诊断维护独立内部 SQLite。Desktop 永不读取该数据库；数据通过 `timeline.v1` 跨越边界。

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CMSearchResult xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <responseStatusStrg>NO MORE MATCHES</responseStatusStrg>
+  <numOfMatches>2</numOfMatches>
+  <matchList>
+    <searchMatchItem>
+      <trackID>101</trackID>
+      <timeSpan><startTime>2026-08-12T08:00:00Z</startTime><endTime>2026-08-12T08:00:10Z</endTime></timeSpan>
+      <mediaSegmentDescriptor><playbackURI>rtsp://192.0.2.10/Streaming/tracks/101?starttime=20260812T080000Z</playbackURI></mediaSegmentDescriptor>
+      <metadataDescriptor>motion</metadataDescriptor>
+      <fileName>fixture-001</fileName>
+    </searchMatchItem>
+    <searchMatchItem>
+      <trackID>101</trackID>
+      <timeSpan><startTime>2026-08-12T08:00:15Z</startTime><endTime>2026-08-12T08:00:30Z</endTime></timeSpan>
+      <mediaSegmentDescriptor><playbackURI>rtsp://192.0.2.10/Streaming/tracks/101?starttime=20260812T080015Z</playbackURI></mediaSegmentDescriptor>
+      <metadataDescriptor>continuous</metadataDescriptor>
+      <fileName>fixture-002</fileName>
+    </searchMatchItem>
+  </matchList>
+</CMSearchResult>
+

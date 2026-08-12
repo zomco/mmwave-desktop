@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Time xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <timeMode>manual</timeMode>
+  <localTime>2026-08-12T08:00:47+00:00</localTime>
+  <timeZone>UTC+00:00:00</timeZone>
+</Time>
+

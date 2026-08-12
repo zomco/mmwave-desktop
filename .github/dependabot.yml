@@ -6,3 +6,43 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     labels: [dependencies, ci]
+
+  - package-ecosystem: npm
+    directory: /desktop/frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /desktop/backend
+    schedule:
+      interval: weekly
+    groups:
+      desktop-python:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /engine
+    schedule:
+      interval: weekly
+    groups:
+      engine-python:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /gateway
+    schedule:
+      interval: weekly
+    groups:
+      gateway-python:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /integrations/hikvision
+    schedule:
+      interval: weekly
+    groups:
+      hikvision-python:
+        patterns: ["*"]

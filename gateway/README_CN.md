@@ -25,3 +25,14 @@ Gateway 是传感器版本中的常驻时间轴生产者。初期它是 TraceCue
 ## 首个可执行切片
 
 一种认证 2D 雷达/型号无人值守运行，维护时钟健康，产生确定性 `presence.traverse` Interval，并在 Desktop 离线时仍保存记录。
+
+## 已实现基线
+
+`tracecue-gateway` 0.1.0 已实现有界的实验性 JSON-line TCP 采集面、重连退避、滚动来源时钟健康、有界短轨迹状态、确定性穿越 Interval、质量门、有界诊断、SQLite 持久化和 `timeline.v1` 导出。fixture 测试证明 Desktop 离线时 Interval 仍会保留。
+
+```powershell
+python -m pip install -e ./engine -e "./gateway[dev]"
+python -m pytest gateway/tests
+```
+
+尚无任何实体雷达/型号通过认证。JSON-line 适配器明确属于实验性能力；受支持硬件适配器必须补充协议 fixture、许可证/来源审查和可重复的无人值守硬件证据。

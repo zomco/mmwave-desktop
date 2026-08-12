@@ -19,14 +19,24 @@
 python scripts/ci/verify_repo.py
 ```
 
-模块清单落地后，以各模块 README/清单为准。CI 预期常规命令：
+各模块 README/清单是权威命令来源。先安装精确的共享开发环境：
+
+```powershell
+python -m pip install -r requirements-dev.lock.txt
+python -m pip install --no-build-isolation --no-deps -e ./engine -e ./integrations/hikvision -e ./gateway -e ./desktop/backend
+```
+
+CI 约定使用：
 
 ```text
 engine:  python -m pytest engine/tests
+海康：python -m pytest integrations/hikvision/tests
 gateway: python -m pytest gateway/tests
 desktop backend: python -m pytest desktop/backend/tests
 desktop frontend: npm ci --prefix desktop/frontend && npm test --prefix desktop/frontend && npm run build --prefix desktop/frontend
 ```
+
+`packaging/windows/build.ps1 -Mode Verify` 在 Windows 上运行全部软件检查。除非许可证、FFmpeg 哈希/声明和签名输入得到明确满足，`-Mode Release` 会按设计阻止发布。
 
 禁止只断言框架能启动的占位测试。测试应保护产品不变量、协议观测或失败模式。
 

@@ -4,7 +4,7 @@
 
 ## Current state
 
-The repository is contract-first: executable product modules have not landed. Your first checkout should still pass repository validation.
+The repository contains an executable 0.1.0 development baseline. Software contracts and synthetic fixtures are testable without hardware; compatibility, codec and installer claims still require authorized hardware and release evidence.
 
 ## Prerequisites
 
@@ -13,6 +13,7 @@ The repository is contract-first: executable product modules have not landed. Yo
 - Node.js LTS only after `desktop/package.json` exists.
 - Windows 11 or a supported Windows 10 environment for product smoke tests.
 - Access to a dedicated test NVR for hardware work; never use production credentials in fixtures.
+- FFmpeg/FFprobe for real media tests; the repository deliberately does not download or check in binaries.
 
 ## First checkout
 
@@ -20,6 +21,12 @@ The repository is contract-first: executable product modules have not landed. Yo
 git clone https://github.com/zomco/tracecue.git
 Set-Location tracecue
 python scripts/ci/verify_repo.py
+python -m pip install -r requirements-dev.lock.txt
+python -m pip install --no-build-isolation --no-deps -e ./engine -e ./integrations/hikvision -e ./gateway -e ./desktop/backend
+python -m pytest engine/tests integrations/hikvision/tests gateway/tests desktop/backend/tests
+npm ci --prefix desktop/frontend
+npm test --prefix desktop/frontend
+npm run build --prefix desktop/frontend
 ```
 
 Then read, in order:

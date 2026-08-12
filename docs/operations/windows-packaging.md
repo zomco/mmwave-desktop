@@ -51,3 +51,10 @@ Sign the application launcher, installer, uninstaller and future updater with a 
 ## Release contents
 
 Every binary release includes application version, database migration version, FFmpeg provenance, third-party notices, supported compatibility matrix, checksum file and signed artifact metadata.
+
+## Implemented automation and current gate
+
+- `packaging/windows/build.ps1 -Mode Verify` runs repository/security, Python module and frontend checks.
+- `-Mode Release` builds a PyInstaller one-folder application, signs it, creates a per-user Inno Setup installer, generates a CycloneDX SBOM and checksums, and refuses to proceed without explicit inputs.
+- `packaging/windows/smoke.ps1` launches the packaged process hidden, verifies loopback status and SQLite initialization, then removes its isolated temporary data.
+- `release/manifest.json` currently has `release_ready=false`. It must remain false until ADR-0004 is resolved, an LGPL-compatible FFmpeg build and hashes/notices are recorded, and signing credentials are approved.
