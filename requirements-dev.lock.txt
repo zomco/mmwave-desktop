@@ -17,7 +17,7 @@ pluggy==1.6.0
 pydantic==2.13.3
 pydantic-core==2.46.3
 Pygments==2.20.0
-pytest==8.4.2
+pytest==9.0.3
 setuptools==84.0.0
 starlette==0.52.1
 typing-extensions==4.15.0
