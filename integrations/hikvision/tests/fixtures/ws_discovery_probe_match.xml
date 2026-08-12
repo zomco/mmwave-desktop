@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<e:Envelope xmlns:e="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+            xmlns:dn="http://www.onvif.org/ver10/network/wsdl">
+  <e:Body>
+    <d:ProbeMatches>
+      <d:ProbeMatch>
+        <d:Types>dn:NetworkVideoTransmitter</d:Types>
+        <d:Scopes>onvif://www.onvif.org/name/Test%20Recorder onvif://www.onvif.org/hardware/Fixture-NVR</d:Scopes>
+        <d:XAddrs>http://192.0.2.55:8080/onvif/device_service</d:XAddrs>
+      </d:ProbeMatch>
+    </d:ProbeMatches>
+  </e:Body>
+</e:Envelope>

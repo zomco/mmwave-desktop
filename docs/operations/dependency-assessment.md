@@ -10,6 +10,7 @@ Direct dependencies are deliberately small. Exact development versions live in `
 | Uvicorn | Loopback ASGI server | BSD-3-Clause | Mature and replaceable behind ASGI; no LAN exposure is enabled |
 | React / React DOM | Desktop SPA state and accessible components | MIT | Mature upstream; only same-origin browser UI depends on it |
 | Vite / TypeScript | Deterministic frontend build and static checking | MIT / Apache-2.0 | Active upstreams; build-time only, exact lock retained |
+| Tailwind CSS / Tailwind Vite plugin | Utility-first UI styling that developers can adjust in colocated React markup | MIT / MIT | Build-time only, active upstream, exact npm lock retained; no runtime service or network dependency |
 | Vitest | Frontend invariant tests | MIT | Build/test-only; small tests can migrate if upstream maintenance changes |
 | pytest / httpx | Python behavior and HTTP integration tests | MIT / BSD-3-Clause | Development-only; production code does not import them |
 | PyInstaller | Windows one-folder assembly | GPL-2.0-or-later with bootloader exception | Packaging-only and pinned; verify the current exception/notices for each release |

@@ -40,7 +40,7 @@ class FFmpegRunner:
         clip_root: Path,
         *,
         connection_timeout_seconds: int = 10,
-        total_timeout_seconds: int = 300,
+        total_timeout_seconds: int = 1_800,
     ):
         self.ffmpeg_path = ffmpeg_path
         self.ffprobe_path = ffprobe_path
@@ -62,6 +62,7 @@ class FFmpegRunner:
         username: str,
         password: str,
         audio_policy: str = "prefer",
+        max_duration_seconds: float | None = None,
         cancel_requested: Callable[[], bool] | None = None,
     ) -> MediaResult:
         if not playback_locators:
@@ -74,20 +75,22 @@ class FFmpegRunner:
         segment_paths: list[Path] = []
         try:
             if len(playback_locators) == 1:
-                self._render_input(
-                    playback_locators[0], username, password, partial, audio_policy, cancel_requested
+                metadata = self._render_compatible_input(
+                    playback_locators[0], username, password, partial, audio_policy,
+                    cancel_requested, max_duration_seconds=max_duration_seconds,
                 )
             else:
                 for index, locator in enumerate(playback_locators):
                     segment = self.clip_root / f".{clip_id}.segment-{index}.mp4"
                     segment_partial = segment.with_suffix(segment.suffix + ".partial")
-                    self._render_input(
-                        locator, username, password, segment_partial, audio_policy, cancel_requested
+                    self._render_compatible_input(
+                        locator, username, password, segment_partial, audio_policy,
+                        cancel_requested, max_duration_seconds=max_duration_seconds,
                     )
                     segment_partial.replace(segment)
                     segment_paths.append(segment)
                 self._concat_segments(segment_paths, partial, cancel_requested)
-            metadata = self._verify(partial)
+                metadata = self._verify(partial)
             partial.replace(output)
             return MediaResult(
                 output,
@@ -105,6 +108,90 @@ class FFmpegRunner:
             for segment in segment_paths:
                 segment.unlink(missing_ok=True)
 
+    def generate_preview(
+        self,
+        *,
+        preview_id: str,
+        playback_locator: str,
+        username: str,
+        password: str,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> Path:
+        if not preview_id.startswith("preview_") or not preview_id.removeprefix("preview_").isalnum():
+            raise MediaError("MEDIA_PATH_INVALID", "Preview identity is invalid.", 400)
+        preview_root = (self.clip_root / "previews").resolve()
+        preview_root.mkdir(parents=True, exist_ok=True)
+        output = (preview_root / f"{preview_id}.jpg").resolve()
+        if output.parent != preview_root:
+            raise MediaError("MEDIA_PATH_INVALID", "Preview path is outside the preview directory.", 400)
+        partial = output.with_suffix(".jpg.partial")
+        authenticated = _with_credentials(playback_locator, username, password)
+        command = [
+            str(self.ffmpeg_path), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-rtsp_transport", "tcp", "-timeout", str(self.connection_timeout_seconds * 1_000_000),
+            "-i", authenticated, "-map", "0:v:0", "-frames:v", "1",
+            "-q:v", "4", "-f", "image2", str(partial),
+        ]
+        try:
+            if not self._run(command, cancel_requested):
+                raise MediaError("MEDIA_PREVIEW_FAILED", "The event preview image could not be generated.", 422)
+            size = partial.stat().st_size
+            if size <= 4 or size > 20 * 1024 * 1024 or not partial.read_bytes()[:3] == b"\xff\xd8\xff":
+                raise MediaError("MEDIA_PREVIEW_FAILED", "The generated event preview is not a valid JPEG.", 500)
+            partial.replace(output)
+            return output
+        finally:
+            partial.unlink(missing_ok=True)
+
+    def _render_compatible_input(
+        self,
+        locator: str,
+        username: str,
+        password: str,
+        output: Path,
+        audio_policy: str,
+        cancel_requested: Callable[[], bool] | None,
+        *,
+        max_duration_seconds: float | None = None,
+    ) -> dict[str, object]:
+        source_codec = self._probe_video_codec(locator, username, password)
+        self._render_input(
+            locator, username, password, output, audio_policy, cancel_requested,
+            force_h264=source_codec != "h264", max_duration_seconds=max_duration_seconds,
+        )
+        metadata = self._verify(output)
+        if metadata["video_codec"] != "h264":
+            raise MediaError("MEDIA_CODEC_UNSUPPORTED", "The recording could not be converted to H.264.", 422)
+        return metadata
+
+    def _probe_video_codec(self, locator: str, username: str, password: str) -> str:
+        authenticated = _with_credentials(locator, username, password)
+        command = [
+            str(self.ffprobe_path), "-v", "error", "-rtsp_transport", "tcp",
+            "-timeout", str(self.connection_timeout_seconds * 1_000_000),
+            "-select_streams", "v:0", "-show_entries", "stream=codec_name",
+            "-of", "json", authenticated,
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                shell=False,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise MediaError("MEDIA_PROBE_FAILED", "The NVR recording stream could not be inspected.", 502) from exc
+        if completed.returncode != 0 or len(completed.stdout) > 1024 * 1024:
+            raise MediaError("MEDIA_PROBE_FAILED", "The NVR recording stream could not be inspected.", 502)
+        try:
+            payload = json.loads(completed.stdout)
+            codec = str(payload["streams"][0]["codec_name"]).lower()
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MediaError("MEDIA_PROBE_FAILED", "The NVR recording has no identifiable video stream.", 422) from exc
+        return codec
+
     def _render_input(
         self,
         locator: str,
@@ -113,28 +200,38 @@ class FFmpegRunner:
         output: Path,
         audio_policy: str,
         cancel_requested: Callable[[], bool] | None,
+        *,
+        force_h264: bool = False,
+        max_duration_seconds: float | None = None,
     ) -> None:
         authenticated = _with_credentials(locator, username, password)
-        audio_args = {
-            "prefer": ["-c:a", "aac", "-b:a", "128k"],
-            "preserve": ["-c:a", "copy"],
-            "omit": ["-an"],
+        audio_attempts = {
+            # Some NVRs advertise a private audio payload that FFmpeg reports as
+            # an audio stream but cannot decode. "prefer" may safely fall back
+            # to video-only output; "preserve" remains strict.
+            "prefer": [["-c:a", "aac", "-b:a", "128k"], ["-an"]],
+            "preserve": [["-c:a", "copy"]],
+            "omit": [["-an"]],
         }[audio_policy]
         common = [
             str(self.ffmpeg_path), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
             "-rtsp_transport", "tcp", "-timeout", str(self.connection_timeout_seconds * 1_000_000),
             "-i", authenticated,
         ]
-        copy_command = common + ["-map", "0:v:0", "-map", "0:a?", "-c:v", "copy"] + audio_args + [
-            "-movflags", "+faststart", "-f", "mp4", str(output)
-        ]
-        if self._run(copy_command, cancel_requested):
+        video_args = list(H264_COMPATIBILITY_ARGS) if force_h264 else ["-c:v", "copy"]
+        for audio_args in audio_attempts:
+            duration_args = ["-t", f"{max_duration_seconds:g}"] if max_duration_seconds else []
+            command = common + ["-map", "0:v:0", "-map", "0:a?", *duration_args, *video_args, *audio_args,
+                "-movflags", "+faststart", "-f", "mp4", str(output)]
+            if self._run(command, cancel_requested):
+                return
+        if not force_h264:
+            self._render_input(
+                locator, username, password, output, audio_policy, cancel_requested,
+                force_h264=True, max_duration_seconds=max_duration_seconds,
+            )
             return
-        transcode_command = common + [
-            "-map", "0:v:0", "-map", "0:a?", *H264_COMPATIBILITY_ARGS,
-        ] + audio_args + ["-movflags", "+faststart", "-f", "mp4", str(output)]
-        if not self._run(transcode_command, cancel_requested):
-            raise MediaError("MEDIA_CODEC_UNSUPPORTED", "The recording could not be remuxed or transcoded.", 422)
+        raise MediaError("MEDIA_CODEC_UNSUPPORTED", "The recording could not be remuxed or transcoded.", 422)
 
     def _concat_segments(
         self,

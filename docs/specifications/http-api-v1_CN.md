@@ -22,6 +22,7 @@ GET    /api/v1/diagnostics/export
 
 ```text
 POST   /api/v1/nvrs/probe
+POST   /api/v1/nvrs/discover
 POST   /api/v1/nvrs
 GET    /api/v1/nvrs
 GET    /api/v1/nvrs/{nvr_id}
@@ -30,8 +31,12 @@ DELETE /api/v1/nvrs/{nvr_id}
 POST   /api/v1/nvrs/{nvr_id}/sync-channels
 GET    /api/v1/nvrs/{nvr_id}/channels
 GET    /api/v1/nvrs/{nvr_id}/capabilities
+GET    /api/v1/nvrs/{nvr_id}/event-audit
+POST   /api/v1/nvrs/{nvr_id}/event-audit
 PATCH  /api/v1/channels/{channel_id}
 ```
+
+`nvrs/discover` 接受 0.5 到 5.0 秒的有界 `timeout_seconds`。它优先使用 ONVIF WS-Discovery，回退方案只在最多三个本机直连私有 `/24` 网段上进行未认证的 80 端口探测。回退结果只是 ISAPI 候选，必须由用户提供凭据通过 `nvrs/probe` 后才能添加。事件审计只读部分移动/智能规则与 trigger-link 配置；仅返回安全摘要，禁止返回原始 XML/凭据，也绝不修改 NVR。
 
 Probe 只读并返回结构化证据：
 
@@ -60,13 +65,22 @@ Probe 只读并返回结构化证据：
 
 能力状态为 `supported`、`unsupported`、`unknown` 和 `degraded`。端点/状态证据由服务端另存，不直接进入公开响应。
 
+删除 NVR 会清除其受保护凭据引用、能力、通道、NVR 来源索引及本地派生片段，但绝不会修改 NVR 上保存的原始录像。
+
 ## 检索与书签
 
 ```text
 POST /api/v1/search-jobs
 GET  /api/v1/search-jobs/{job_id}
+GET  /api/v1/search-jobs/{job_id}/results
+GET  /api/v1/search-presets
+POST /api/v1/search-presets
+DELETE /api/v1/search-presets/{preset_id}
 GET  /api/v1/bookmarks
 GET  /api/v1/bookmarks/{bookmark_id}
+GET  /api/v1/bookmarks/{bookmark_id}/preview
+POST /api/v1/bookmarks/{bookmark_id}/preview
+GET  /api/v1/bookmarks/{bookmark_id}/preview/content
 ```
 
 请求示例：
@@ -77,9 +91,14 @@ GET  /api/v1/bookmarks/{bookmark_id}
   "channel_ids": ["channel_01"],
   "from": "2026-08-12T00:00:00+08:00",
   "to": "2026-08-13T00:00:00+08:00",
-  "source_modes": ["record_classification", "historical_event"]
+  "source_modes": ["record_classification"],
+  "area_name": "北门",
+  "event_types": ["motion", "line_crossing"],
+  "preset_id": "preset_01"
 }
 ```
+
+`area_name` 是用户定义的业务标签；实际区域映射由所选稳定摄像机 ID 和事件类型标签组成，不能声称它等于 NVR 画面多边形。Preset 保存该映射。`search-jobs/{job_id}/results` 只返回本次检索产生的事件，使后续片段能够精确追溯到检索会话。预览生成是异步 FFmpeg 作业，在派生媒体根目录下原子写入一张校验后的 JPEG。
 
 大范围检索使用后台作业。书签列表使用服务端不透明 cursor，禁止透传海康分页位置或 token。
 
@@ -101,10 +120,18 @@ POST   /api/v1/jobs/{job_id}/cancel
 ```json
 {
   "bookmark_id": "interval_01",
-  "window_override": { "pre_roll_ms": 5000, "post_roll_ms": 10000 },
+  "search_job_id": "job_search_01",
+  "window_override": { "pre_roll_ms": 5000, "post_roll_ms": 10000, "max_duration_ms": 30000 },
   "audio_policy": "prefer"
 }
 ```
+
+按书签创建时，公开 Clip 记录包含安全的 `origin` 字段：书签 ID、检索作业 ID、区域标签、通道标签、事件类型/原始分类、事件时间窗，以及是否应用了显式候选时长上限；绝不包含 RTSP locator 或凭据。显式通道/时间窗出片的 `origin` 为 `null`。
+
+`audio_policy` 可取 `prefer`、`preserve` 或 `omit`。`prefer` 会将受支持音频转为
+AAC；若 NVR 声明了 FFmpeg 无法解码的私有音频载荷，则降级生成静音片段。
+`preserve` 为严格模式，不会静默丢弃音频。渲染前会先检查源视频编码：H.264
+尽量直接封装，其他编码转换为适合浏览器播放的 H.264。
 
 作业状态为 `queued`、`running`、`succeeded`、`failed`、`cancelled` 和 `interrupted`。重启时原 `running` 作业变为 `interrupted`，恢复必须作为显式新尝试。Clip content 支持有边界的 HTTP Range。
 

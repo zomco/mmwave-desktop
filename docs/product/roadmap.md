@@ -30,7 +30,7 @@ Software implementation status is tracked separately from hardware/product exit 
 
 ## M3 — Distributable NVR foundation
 
-- Multi-channel filters, aliases, H.265/audio compatibility path and diagnostics bundle.
+- LAN discovery, multi-channel/area/event filters, saved filters, event previews, rule/notification audits, event-linked exports, H.265/audio compatibility path and diagnostics bundle.
 - Windows one-folder installer, signing pipeline and data retention controls.
 - Exit: an unfamiliar tester completes install-to-playback from written instructions.
 
@@ -50,4 +50,4 @@ Software implementation status is tracked separately from hardware/product exit 
 
 ## Deferred
 
-LAN exposure, live streaming preview, ONVIF brand expansion, multiple NVRs, cloud relay, automatic updater, channel licensing and hardware bundles remain deferred until preceding evidence exists.
+LAN exposure, live streaming preview, ONVIF brand expansion, direct phone relay, cloud relay, automatic updater, channel licensing and hardware bundles remain deferred until preceding evidence exists. Multiple NVR records are implemented, but cross-NVR aggregate search remains deferred.

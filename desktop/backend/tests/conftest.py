@@ -14,6 +14,9 @@ from tracecue_hikvision import (
     CapabilityReport,
     ClockObservation,
     DeviceIdentity,
+    DiscoveredDevice,
+    EventAuditReport,
+    EventRuleStatus,
     HikvisionAdapter,
     MediaChannel,
     Page,
@@ -60,6 +63,17 @@ class FakeAdapter:
     def search_recordings(self, query):
         return Page(self.spans, None, True)
 
+    def inspect_event_settings(self, channels):
+        return EventAuditReport(
+            NOW,
+            (
+                EventRuleStatus(
+                    "1", "101", "motion", "supported", True, True,
+                    60, 1, 1, "/motionDetection",
+                ),
+            ),
+        )
+
     resolve_media = staticmethod(HikvisionAdapter.resolve_media)
 
 
@@ -74,14 +88,26 @@ class FakeMediaRunner:
         }
 
     def generate(
-        self, *, clip_id, playback_locators, username, password, audio_policy, cancel_requested
+        self, *, clip_id, playback_locators, username, password, audio_policy,
+        max_duration_seconds, cancel_requested
     ):
         assert password == "secret-password"
         assert playback_locators == ("rtsp://192.0.2.10/fixture",)
+        assert max_duration_seconds > 0
         assert not cancel_requested()
         output = self.clip_root / f"{clip_id}.mp4"
         output.write_bytes(b"0123456789" * 100)
         return MediaResult(output, output.stat().st_size, "h264", "aac", 60.0)
+
+    def generate_preview(
+        self, *, preview_id, playback_locator, username, password, cancel_requested
+    ):
+        assert password == "secret-password"
+        assert playback_locator == "rtsp://192.0.2.10/fixture"
+        output = self.clip_root / "previews" / f"{preview_id}.jpg"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"\xff\xd8\xfffixture-preview")
+        return output
 
 
 @pytest.fixture
@@ -98,6 +124,11 @@ def services(tmp_path: Path) -> DesktopServices:
         secret_store=InMemorySecretStore(),
         adapter_factory=lambda _: adapter,
         media_runner=FakeMediaRunner(config.clip_dir),
+        device_discoverer=lambda _timeout: (
+            DiscoveredDevice(
+                "192.0.2.20", 80, False, "Discovered recorder", "fixture-discovery", ("NetworkVideoTransmitter",)
+            ),
+        ),
     )
 
 

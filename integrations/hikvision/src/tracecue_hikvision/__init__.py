@@ -1,6 +1,7 @@
 """Public Hikvision adapter API."""
 
 from .adapter import HikvisionAdapter
+from .discovery import discover_devices, parse_discovery_response
 from .errors import (
     AuthenticationError,
     HikvisionError,
@@ -15,6 +16,9 @@ from .models import (
     ClockObservation,
     ConnectionConfig,
     DeviceIdentity,
+    DiscoveredDevice,
+    EventAuditReport,
+    EventRuleStatus,
     MediaChannel,
     MediaResolution,
     Page,
@@ -30,8 +34,13 @@ __all__ = [
     "ClockObservation",
     "ConnectionConfig",
     "DeviceIdentity",
+    "DiscoveredDevice",
+    "EventAuditReport",
+    "EventRuleStatus",
     "DigestTransport",
     "HikvisionAdapter",
+    "discover_devices",
+    "parse_discovery_response",
     "HikvisionError",
     "HttpResponse",
     "MediaChannel",
@@ -45,4 +54,3 @@ __all__ = [
     "UnsafePayloadError",
     "UpstreamError",
 ]
-

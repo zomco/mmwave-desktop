@@ -19,6 +19,10 @@ Desktop 初期使用 SQLite。表使用稳定不透明文本 ID 和 UTC epoch �
 | `jobs` | 类型、状态、进度、错误、payload、尝试次数、时间 | 检索/导入/媒体作业 |
 | `clips` | 通道/时间窗、实际覆盖、路径、编码、状态、大小 | 派生媒体索引 |
 | `imports` | 文档/来源 ID、内容哈希、状态、诊断 | Inspect/commit 审计 |
+| `search_presets` | NVR、区域、通道 ID、事件类型、最近使用时间 | 用户可复用的事件筛选条件 |
+| `search_results` | 检索作业、Interval | 检索会话到事件的精确来源关系 |
+| `nvr_event_audits` | NVR、安全摘要 JSON、观测时间 | 只读事件规则/通知快照 |
+| `event_previews` | Interval、作业、状态、相对路径 | 派生 JPEG 预览索引 |
 
 ## 约束
 
@@ -51,5 +55,6 @@ resolved_start_ms/resolved_end_ms
 - Interval 和映射是持久元数据；
 - 录像 Span 是可刷新缓存；
 - Clip 是受配额管理的派生产物；
+- 预览 JPEG 也是派生产物，位于同一受校验根目录，并随对应 NVR 来源记录删除；
 - 原始轨迹点只作有界诊断，默认不无限保存；
 - 删除 clip 同时删除索引和已确认位于根目录内的文件；删除 Interval 不影响 NVR 媒体。

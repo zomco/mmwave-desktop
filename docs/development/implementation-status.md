@@ -15,7 +15,7 @@ Before this implementation, the repository contained M0 documentation, contracts
 | M0 contracts | Complete | repository and security verifier | Complete |
 | M1 Hikvision probe | Implemented | synthetic device/time/channel/search fixtures; auth/size/XML/pagination failure tests | Blocked on two authorized NVR model/firmware evidence records |
 | M2 H.264 clip | Implemented | persistent jobs, resolver, FFmpeg argument arrays, `.partial`/FFprobe/atomic path, Range tests and pinned `libopenh264` smoke | Blocked on real H.264 NVR P95 result |
-| M3 distributable foundation | Substantially implemented | MIT decision; pinned FFmpeg binary/source hashes; multi-channel/aliases, H.265 fallback, quota, diagnostics/status, one-folder/installer/sign/SBOM/smoke scripts | Blocked on complete static-dependency source/notices review, certificate, built installer and unfamiliar-user test |
+| M3 distributable foundation | Substantially implemented | MIT decision; pinned FFmpeg binary/source hashes; multi-channel/aliases, LAN discovery, event-rule audit, saved filters, previews, event-linked exports, H.265 fallback, quota, diagnostics/status, one-folder/installer/sign/SBOM/smoke scripts | Blocked on complete static-dependency source/notices review, certificate, built installer and unfamiliar-user test |
 | M4 timeline path | Implemented | strict inspect/commit/hash/idempotency, mapping/correction, quality/source UI, comparison guardrail tests | Blocked on a cleared labelled golden dataset and measured recall/precision/find-time |
 | M5 gateway | Core implemented | bounded experimental input, reconnect, clock health, track quality, SQLite durability, export tests while Desktop is offline | Blocked on selecting/certifying one physical radar model and unattended deployment evidence |
 
@@ -23,8 +23,8 @@ Before this implementation, the repository contained M0 documentation, contracts
 
 - Engine: value types, strict 8 MiB `timeline.v1`, RFC 3339 offset rules, deterministic identity, quality gate, media window, merge/filter and idempotent upsert.
 - Hikvision: Digest HTTP(S), evidence snapshots, defensive XML, channels, recording pages, locators and coverage gaps.
-- Desktop backend: loopback service, same-origin safety, SQLite migration v1, DPAPI references, HTTP API v1, jobs/recovery/cancel, bookmark index, timeline mapping, clips, quota and bounded Range.
-- Desktop frontend: add/probe device, search, honest NVR candidates, high-confidence queue, clip playback, timeline import/mapping, comparison and diagnostics.
+- Desktop backend: loopback service, same-origin safety, SQLite migrations v1-v2, DPAPI references, HTTP API v1, bounded discovery, event-rule audit, saved filters/search provenance, preview/clip jobs, recovery/cancel, timeline mapping, quota and bounded Range.
+- Desktop frontend: React/Tailwind event-first search, automatic/manual device onboarding, event configuration audit, preview gallery, event-linked clip playback/download and local diagnostics. Timeline mapping/comparison is deferred from primary navigation.
 - Gateway: HA-free experimental bridge, clock health, bounded trajectory buffer, traverse quality, durable intervals and export.
 - Delivery: exact npm lock, Python development lock, module CI, CodeQL, Dependabot, Windows packaging/sign/install/smoke and release manifest gates.
 

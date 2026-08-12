@@ -19,6 +19,10 @@ SQLite is the initial desktop store. Tables use stable opaque text IDs and UTC e
 | `jobs` | kind, state, progress, error, payload, attempts, timestamps | Search/import/media work |
 | `clips` | channel/window, actual coverage, path, codec, status, size | Derived media artifact index |
 | `imports` | document/source IDs, content hash, status, diagnostics | Inspect/commit audit |
+| `search_presets` | NVR, area, channel IDs, event types, last-used time | Reusable user-authored event filter |
+| `search_results` | search job, interval | Exact provenance from a search session to its events |
+| `nvr_event_audits` | NVR, safe summary JSON, observed time | Read-only event rule/notification snapshot |
+| `event_previews` | interval, job, status, relative path | Derived JPEG preview index |
 
 ## Constraints
 
@@ -51,5 +55,6 @@ This makes later clock-policy changes auditable. Never overwrite raw imported ti
 - Intervals and mappings are durable metadata.
 - Recording spans are a refreshable cache.
 - Clips are derived and quota-controlled.
+- Preview JPEGs are derived, stored under the same verified root and removed with their NVR-derived records.
 - Raw trajectory points are bounded diagnostics, not indefinite default storage.
 - Deleting a clip removes both its index and verified in-root file; deleting an interval does not delete NVR media.

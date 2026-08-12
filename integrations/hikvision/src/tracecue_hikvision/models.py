@@ -110,3 +110,35 @@ class MediaResolution:
     def complete(self) -> bool:
         return not self.missing_spans
 
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredDevice:
+    host: str
+    http_port: int
+    use_https: bool
+    name: str
+    model: str | None
+    device_types: tuple[str, ...]
+    discovery_protocol: str = "onvif_ws_discovery"
+
+
+@dataclass(frozen=True, slots=True)
+class EventRuleStatus:
+    channel_external_id: str
+    track_id: str | None
+    event_type: str
+    state: CapabilityState
+    enabled: bool | None
+    notification_configured: bool | None
+    sensitivity: int | None
+    region_count: int | None
+    schedule_block_count: int | None
+    endpoint: str | None
+    note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EventAuditReport:
+    observed_at: datetime
+    rules: tuple[EventRuleStatus, ...]
+    warnings: tuple[dict[str, str], ...] = ()

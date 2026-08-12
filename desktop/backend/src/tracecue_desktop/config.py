@@ -42,17 +42,32 @@ class AppConfig:
         frontend_override = os.environ.get("TRACECUE_FRONTEND_DIR")
         bundled_frontend = executable_dir / "frontend"
         frontend_dir = Path(frontend_override) if frontend_override else (bundled_frontend if bundled_frontend.exists() else None)
-        bundled_tools = executable_dir / "tools"
-        ffmpeg = bundled_tools / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
-        ffprobe = bundled_tools / ("ffprobe.exe" if os.name == "nt" else "ffprobe")
+        ffmpeg = _media_tool_path("ffmpeg", executable_dir)
+        ffprobe = _media_tool_path("ffprobe", executable_dir)
         return cls(
             data_dir=data_dir,
             clip_dir=clip_dir,
             frontend_dir=frontend_dir,
-            ffmpeg_path=ffmpeg if ffmpeg.exists() else Path("ffmpeg"),
-            ffprobe_path=ffprobe if ffprobe.exists() else Path("ffprobe"),
+            ffmpeg_path=ffmpeg,
+            ffprobe_path=ffprobe,
         )
 
     def prepare(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.clip_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _media_tool_path(name: str, executable_dir: Path) -> Path:
+    """Resolve packaged, explicitly configured, or checkout-local media tools."""
+    executable_name = f"{name}.exe" if os.name == "nt" else name
+    override = os.environ.get(f"TRACECUE_{name.upper()}_PATH")
+    if override:
+        return Path(override)
+
+    candidates = [executable_dir / "tools" / executable_name]
+    if os.name == "nt":
+        # Editable installs run from the repository venv, while the verified
+        # binaries fetched by packaging/windows/fetch-ffmpeg.ps1 live here.
+        repository_root = Path(__file__).resolve().parents[4]
+        candidates.append(repository_root / "packaging" / "windows" / "tools" / executable_name)
+    return next((candidate for candidate in candidates if candidate.is_file()), Path(name))

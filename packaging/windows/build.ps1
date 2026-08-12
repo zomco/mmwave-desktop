@@ -47,7 +47,27 @@ if (-not (Test-Path -LiteralPath $BuildPython -PathType Leaf)) {
 Invoke-Checked $BuildPython @("-m", "pip", "install", "--requirement", "requirements-dev.lock.txt")
 Invoke-Checked $BuildPython @("-m", "pip", "install", "--no-build-isolation", "--no-deps", "-e", "engine", "-e", "integrations/hikvision", "-e", "gateway", "-e", "desktop/backend")
 Invoke-Checked $BuildPython @("scripts/ci/verify_repo.py", "--security")
-Invoke-Checked $BuildPython @("-m", "pytest", "engine/tests", "integrations/hikvision/tests", "gateway/tests", "desktop/backend/tests", "-q")
+$PytestTempRoot = Join-Path $RepositoryRoot ("build\pytest-" + [guid]::NewGuid().ToString("N"))
+try {
+    # pytest's default %TEMP% base may be owned by another Windows identity (for
+    # example an IDE sandbox or an elevated shell). A unique repository-local
+    # base keeps verification independent from that global ACL state.
+    Invoke-Checked $BuildPython @(
+        "-m", "pytest",
+        "engine/tests", "integrations/hikvision/tests", "gateway/tests", "desktop/backend/tests",
+        "--basetemp", $PytestTempRoot,
+        "-q"
+    )
+} finally {
+    $ResolvedBuildRoot = [System.IO.Path]::GetFullPath((Join-Path $RepositoryRoot "build"))
+    $ResolvedPytestTemp = [System.IO.Path]::GetFullPath($PytestTempRoot)
+    if (-not $ResolvedPytestTemp.StartsWith($ResolvedBuildRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unsafe pytest cleanup target: $ResolvedPytestTemp"
+    }
+    if (Test-Path -LiteralPath $ResolvedPytestTemp) {
+        Remove-Item -LiteralPath $ResolvedPytestTemp -Recurse -Force
+    }
+}
 Invoke-Checked "npm" @("ci", "--prefix", "desktop/frontend", "--cache", "desktop/frontend/.npm-cache")
 Invoke-Checked "npm" @("test", "--prefix", "desktop/frontend")
 Invoke-Checked "npm" @("run", "build", "--prefix", "desktop/frontend")

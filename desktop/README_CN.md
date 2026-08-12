@@ -7,7 +7,7 @@ Desktop 是主要用户应用：一个在回环地址同源提供 SPA 与 HTTP A
 ## 负责
 
 - NVR 添加、能力证据和通道别名；
-- 书签检索和 timeline 导入/映射；
+- 事件优先的录像检索、区域/通道/类型筛选保存和 timeline 导入/映射；
 - 通过适配器解析录像覆盖；
 - 持久后台作业和 FFmpeg 出片；
 - SQLite 迁移、本地 clip 配额和支持诊断。
@@ -33,7 +33,7 @@ Desktop 可以依赖 `engine` 和 `integrations/hikvision`。它消费 `timeline
 
 ## 已实现基线
 
-后端已实现 HTTP API v1 路由、SQLite migration v1、DPAPI 凭据引用、基于证据的 NVR 添加、通道别名、持久化检索/作业、书签审阅、时间轴 inspect/commit、来源到空间再到摄像机的映射、FFmpeg remux/转码/校验、原子片段、配额保留和有界 Range 交付。SPA 已实现首次运行、审阅、设备、来源/映射、对照评估、片段和诊断视图。
+后端已实现 HTTP API v1 路由、SQLite migration v1-v2、DPAPI 凭据引用、有界 ONVIF/私有网段发现、基于证据的 NVR 添加、事件规则审计、通道别名、历史筛选条件、检索会话事件结果、事件预览、持久化作业、时间轴导入/映射、FFmpeg remux/转码/校验、带事件/检索来源的原子片段、配额保留和有界 Range 交付。React/Tailwind SPA 的主功能只保留事件检索、设备中心、候选与导出、设置四项；时间轴对照/映射作为后期高级功能保留。
 
 ```powershell
 python -m pip install -r requirements-dev.lock.txt

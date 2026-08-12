@@ -10,6 +10,7 @@
 | Uvicorn | 回环 ASGI 服务 | BSD-3-Clause | 成熟且可在 ASGI 后替换；不启用 LAN 暴露 |
 | React / React DOM | Desktop SPA 状态与可访问组件 | MIT | 上游成熟；仅同源浏览器 UI 依赖它 |
 | Vite / TypeScript | 确定性前端构建与静态检查 | MIT / Apache-2.0 | 上游活跃；仅构建期使用，保留精确 lock |
+| Tailwind CSS / Tailwind Vite 插件 | 在 React 标记旁提供方便开发者微调的 utility-first 样式 | MIT / MIT | 仅构建期、上游活跃、保留精确 npm lock；不增加运行时服务或网络依赖 |
 | Vitest | 前端不变量测试 | MIT | 仅构建/测试；若上游维护变化，小型测试可迁移 |
 | pytest / httpx | Python 行为与 HTTP 集成测试 | MIT / BSD-3-Clause | 仅开发；生产代码不 import |
 | PyInstaller | Windows one-folder 组装 | GPL-2.0-or-later + bootloader 例外 | 仅打包且固定版本；每次发布复核当时例外与声明 |

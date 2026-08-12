@@ -38,6 +38,13 @@ desktop frontend: npm ci --prefix desktop/frontend && npm test --prefix desktop/
 
 `packaging/windows/build.ps1 -Mode Verify` runs all software checks on Windows. `-Mode Release` is intentionally blocked unless licensing, FFmpeg hashes/notices and signing inputs are explicitly satisfied.
 
+The Windows verification script gives pytest a unique base directory under repository-local `build/`. This avoids `WinError 5` when `%TEMP%\pytest-of-<user>` was created by an elevated process, IDE sandbox or another Windows identity. For a direct local pytest invocation, use the same pattern:
+
+```powershell
+$pytestTemp = Join-Path (Resolve-Path ./build) ("pytest-manual-" + [guid]::NewGuid().ToString("N"))
+python -m pytest engine/tests integrations/hikvision/tests gateway/tests desktop/backend/tests --basetemp $pytestTemp
+```
+
 Do not add placeholder tests that only assert framework startup. A test should protect a product invariant, protocol observation or failure mode.
 
 ## Fixture policy

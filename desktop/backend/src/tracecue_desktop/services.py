@@ -19,6 +19,7 @@ from tracecue_hikvision import (
     HikvisionAdapter,
     HikvisionError,
     RecordingQuery,
+    discover_devices,
 )
 
 from .config import AppConfig
@@ -39,6 +40,19 @@ def new_id(prefix: str) -> str:
 def stable_id(prefix: str, *parts: str) -> str:
     digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:24]
     return f"{prefix}_{digest}"
+
+
+def _canonical_nvr_event_type(classification: str) -> str:
+    normalized = classification.lower()
+    if any(marker in normalized for marker in ("motion", "vmd")):
+        return "motion"
+    if "line" in normalized and "detect" in normalized:
+        return "line_crossing"
+    if any(marker in normalized for marker in ("fielddetect", "intrusion")):
+        return "region_intrusion"
+    if any(marker in normalized for marker in ("timing", "continuous")):
+        return "continuous"
+    return "smart"
 
 
 def rfc3339(value_ms: int | None) -> str | None:
@@ -71,6 +85,7 @@ class DesktopServices:
         secret_store: SecretStore | None = None,
         adapter_factory: Callable[[ConnectionConfig], HikvisionAdapter] | None = None,
         media_runner: FFmpegRunner | None = None,
+        device_discoverer: Callable[[float], tuple[Any, ...]] | None = None,
     ):
         self.config = config
         config.prepare()
@@ -81,7 +96,26 @@ class DesktopServices:
         self.media_runner = media_runner or FFmpegRunner(
             config.ffmpeg_path, config.ffprobe_path, config.clip_dir
         )
+        self.device_discoverer = device_discoverer or discover_devices
         self.worker = JobWorker(self)
+
+    def discover_nvrs(self, timeout_seconds: float) -> list[dict[str, Any]]:
+        try:
+            devices = self.device_discoverer(timeout_seconds)
+        except (OSError, ValueError) as exc:
+            raise AppError("NVR_DISCOVERY_FAILED", "Local device discovery could not complete.", 502) from exc
+        configured = {
+            (row["host"].lower(), int(row["http_port"]), bool(row["use_https"]))
+            for row in self.database.all("SELECT host, http_port, use_https FROM nvrs")
+        }
+        result = []
+        for device in devices:
+            item = jsonable(device)
+            item["already_added"] = (
+                str(item["host"]).lower(), int(item["http_port"]), bool(item["use_https"])
+            ) in configured
+            result.append(item)
+        return result
 
     def probe_nvr(self, values: dict[str, Any]) -> dict[str, Any]:
         connection = self._connection_from_values(values)
@@ -182,11 +216,25 @@ class DesktopServices:
             """,
             (nvr_id,),
         )
-        self.database.execute("DELETE FROM nvrs WHERE id=?", (nvr_id,))
+        preview_rows = self.database.all(
+            """
+            SELECT p.relative_path FROM event_previews p
+            JOIN intervals i ON i.id=p.interval_id
+            JOIN nvr_channels nc ON nc.id=i.nvr_channel_id
+            WHERE nc.nvr_id=? AND p.relative_path IS NOT NULL
+            """,
+            (nvr_id,),
+        )
+        with self.database.transaction() as db:
+            db.execute(
+                "DELETE FROM sources WHERE kind='nvr' AND external_source_id=?",
+                (nvr_id,),
+            )
+            db.execute("DELETE FROM nvrs WHERE id=?", (nvr_id,))
         self.secret_store.delete(row["secret_ref"])
-        for clip in clip_rows:
-            path = (self.config.clip_dir / clip["relative_path"]).resolve()
-            if path.parent == self.config.clip_dir.resolve():
+        for artifact in [*clip_rows, *preview_rows]:
+            path = (self.config.clip_dir / artifact["relative_path"]).resolve()
+            if path.is_relative_to(self.config.clip_dir.resolve()):
                 path.unlink(missing_ok=True)
 
     def sync_channels(self, nvr_id: str) -> list[dict[str, Any]]:
@@ -251,6 +299,45 @@ class DesktopServices:
             row["observed_at"] = rfc3339(row.pop("observed_ms"))
         return rows
 
+    def audit_nvr_events(self, nvr_id: str) -> dict[str, Any]:
+        nvr = self._nvr_row(nvr_id)
+        adapter = self._adapter_for_row(nvr)
+        try:
+            report = adapter.inspect_event_settings(adapter.list_channels())
+        except HikvisionError as exc:
+            raise AppError(exc.code, "NVR event settings could not be inspected.", 502) from exc
+        payload = jsonable(report)
+        labels = {
+            row["external_channel_id"]: row["alias"] or row["device_name"]
+            for row in self.database.all(
+                "SELECT external_channel_id, alias, device_name FROM nvr_channels WHERE nvr_id=?",
+                (nvr_id,),
+            )
+        }
+        for rule in payload["rules"]:
+            rule["channel_label"] = labels.get(
+                rule["channel_external_id"], f"Channel {rule['channel_external_id']}"
+            )
+        observed_ms = self._external_time(payload["observed_at"], "observed_at")
+        self.database.execute(
+            """
+            INSERT INTO nvr_event_audits(nvr_id, report_json, observed_ms) VALUES (?, ?, ?)
+            ON CONFLICT(nvr_id) DO UPDATE SET report_json=excluded.report_json,
+                observed_ms=excluded.observed_ms
+            """,
+            (nvr_id, json.dumps(payload), observed_ms),
+        )
+        return payload
+
+    def get_event_audit(self, nvr_id: str) -> dict[str, Any]:
+        self._nvr_row(nvr_id)
+        row = self.database.one(
+            "SELECT report_json FROM nvr_event_audits WHERE nvr_id=?", (nvr_id,)
+        )
+        if not row:
+            raise AppError("EVENT_AUDIT_NOT_RUN", "Event settings have not been inspected yet.", 404)
+        return json.loads(row["report_json"])
+
     def patch_channel(self, channel_id: str, values: dict[str, Any]) -> dict[str, Any]:
         if "alias" not in values:
             raise AppError("CHANNEL_PATCH_EMPTY", "No supported channel field was provided.", 422)
@@ -276,6 +363,18 @@ class DesktopServices:
             channel = self._channel_row(channel_id)
             if channel["nvr_id"] != nvr_id:
                 raise AppError("NVR_CHANNEL_MISMATCH", "A channel does not belong to the selected NVR.", 422)
+        event_types = [str(value).strip().lower() for value in values.get("event_types") or [] if str(value).strip()]
+        if any(len(value) > 100 for value in event_types):
+            raise AppError("EVENT_FILTER_INVALID", "An event type filter is too long.", 422)
+        preset_id = values.get("preset_id")
+        if preset_id:
+            preset = self.database.one("SELECT nvr_id FROM search_presets WHERE id=?", (preset_id,))
+            if not preset or preset["nvr_id"] != nvr_id:
+                raise AppError("SEARCH_PRESET_NOT_FOUND", "The saved search filter was not found for this NVR.", 404)
+            self.database.execute(
+                "UPDATE search_presets SET last_used_ms=?, updated_ms=? WHERE id=?",
+                (now_ms(), now_ms(), preset_id),
+            )
         return self._enqueue_job(
             "recording_search",
             {
@@ -284,8 +383,68 @@ class DesktopServices:
                 "from_ms": start_ms,
                 "to_ms": end_ms,
                 "source_modes": values.get("source_modes") or ["record_classification"],
+                "area_name": values.get("area_name") or "",
+                "event_types": list(dict.fromkeys(event_types)),
+                "preset_id": preset_id,
             },
         )
+
+    def list_search_presets(self) -> list[dict[str, Any]]:
+        rows = self.database.all(
+            "SELECT * FROM search_presets ORDER BY COALESCE(last_used_ms, updated_ms) DESC"
+        )
+        return [self._public_search_preset(row) for row in rows]
+
+    def create_search_preset(self, values: dict[str, Any]) -> dict[str, Any]:
+        self._nvr_row(values["nvr_id"])
+        channel_ids = list(dict.fromkeys(values["channel_ids"]))
+        for channel_id in channel_ids:
+            channel = self._channel_row(channel_id)
+            if channel["nvr_id"] != values["nvr_id"]:
+                raise AppError("NVR_CHANNEL_MISMATCH", "A channel does not belong to the selected NVR.", 422)
+        preset_id = new_id("preset")
+        timestamp = now_ms()
+        self.database.execute(
+            """
+            INSERT INTO search_presets(
+                id, name, nvr_id, area_name, channel_ids_json, event_types_json,
+                created_ms, updated_ms, last_used_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                preset_id, values["name"].strip(), values["nvr_id"],
+                values["area_name"].strip(), json.dumps(channel_ids),
+                json.dumps(list(dict.fromkeys(values.get("event_types") or []))),
+                timestamp, timestamp, timestamp,
+            ),
+        )
+        row = self.database.one("SELECT * FROM search_presets WHERE id=?", (preset_id,))
+        return self._public_search_preset(row)
+
+    def delete_search_preset(self, preset_id: str) -> None:
+        if not self.database.execute("DELETE FROM search_presets WHERE id=?", (preset_id,)):
+            raise AppError("SEARCH_PRESET_NOT_FOUND", "The saved search filter was not found.", 404)
+
+    def search_results(self, job_id: str) -> dict[str, Any]:
+        job = self.database.one("SELECT kind, state, result_json FROM jobs WHERE id=?", (job_id,))
+        if not job or job["kind"] != "recording_search":
+            raise AppError("JOB_NOT_FOUND", "Search job was not found.", 404)
+        rows = self.database.all(
+            """
+            SELECT i.*, sc.label AS source_channel_label, sc.kind AS source_channel_kind,
+                   s.kind AS source_kind, s.external_source_id,
+                   COALESCE(nc.alias, nc.device_name) AS media_channel_label
+            FROM search_results sr
+            JOIN intervals i ON i.id=sr.interval_id
+            JOIN source_channels sc ON sc.id=i.source_channel_id
+            JOIN sources s ON s.id=i.source_id
+            LEFT JOIN nvr_channels nc ON nc.id=i.nvr_channel_id
+            WHERE sr.search_job_id=?
+            ORDER BY i.resolved_start_ms DESC, i.id DESC
+            """,
+            (job_id,),
+        )
+        return {"job_id": job_id, "state": job["state"], "items": [self._public_interval(row) for row in rows]}
 
     def list_bookmarks(self, *, limit: int, cursor: str | None, high_confidence: bool | None) -> dict[str, Any]:
         if not 1 <= limit <= 200:
@@ -340,6 +499,62 @@ class DesktopServices:
             raise AppError("TIMELINE_INTERVAL_NOT_FOUND", "Bookmark was not found.", 404)
         return self._public_interval(row)
 
+    def enqueue_event_preview(self, bookmark_id: str) -> dict[str, Any]:
+        interval = self.database.one("SELECT * FROM intervals WHERE id=?", (bookmark_id,))
+        if not interval:
+            raise AppError("TIMELINE_INTERVAL_NOT_FOUND", "Event was not found.", 404)
+        existing = self.database.one("SELECT * FROM event_previews WHERE interval_id=?", (bookmark_id,))
+        if existing and existing["status"] in {"queued", "generating", "ready"}:
+            if existing["status"] != "ready" or self._derived_path_exists(existing["relative_path"]):
+                return self._public_event_preview(existing)
+        channel_id = interval["nvr_channel_id"] or self._mapped_media_channel(interval)
+        self._channel_row(channel_id)
+        job_id = new_id("job")
+        timestamp = now_ms()
+        payload = {
+            "interval_id": bookmark_id,
+            "channel_id": channel_id,
+            "start_ms": interval["resolved_start_ms"],
+            "end_ms": min(interval["resolved_end_ms"], interval["resolved_start_ms"] + 15_000),
+        }
+        with self.database.transaction() as db:
+            db.execute(
+                "INSERT INTO jobs(id, kind, state, payload_json, attempts, created_ms, updated_ms) "
+                "VALUES (?, 'event_preview', 'queued', ?, 0, ?, ?)",
+                (job_id, json.dumps(payload), timestamp, timestamp),
+            )
+            db.execute(
+                """
+                INSERT INTO event_previews(interval_id, job_id, status, relative_path, created_ms, updated_ms)
+                VALUES (?, ?, 'queued', NULL, ?, ?)
+                ON CONFLICT(interval_id) DO UPDATE SET job_id=excluded.job_id,
+                    status='queued', relative_path=NULL, updated_ms=excluded.updated_ms
+                """,
+                (bookmark_id, job_id, timestamp, timestamp),
+            )
+        return self.get_event_preview(bookmark_id)
+
+    def get_event_preview(self, bookmark_id: str) -> dict[str, Any]:
+        row = self.database.one("SELECT * FROM event_previews WHERE interval_id=?", (bookmark_id,))
+        if not row:
+            raise AppError("MEDIA_PREVIEW_NOT_FOUND", "Event preview has not been requested.", 404)
+        return self._public_event_preview(row)
+
+    def event_preview_file(self, bookmark_id: str) -> Path:
+        row = self.database.one("SELECT * FROM event_previews WHERE interval_id=?", (bookmark_id,))
+        if not row or row["status"] != "ready" or not row["relative_path"]:
+            raise AppError("MEDIA_PREVIEW_NOT_READY", "Event preview is not ready.", 409)
+        path = (self.config.clip_dir / row["relative_path"]).resolve()
+        if not path.is_relative_to(self.config.clip_dir.resolve()) or not path.is_file():
+            raise AppError("STORAGE_PREVIEW_MISSING", "Event preview file is missing.", 410)
+        return path
+
+    def _derived_path_exists(self, relative_path: str | None) -> bool:
+        if not relative_path:
+            return False
+        path = (self.config.clip_dir / relative_path).resolve()
+        return path.is_relative_to(self.config.clip_dir.resolve()) and path.is_file()
+
     def enqueue_clip(self, values: dict[str, Any]) -> dict[str, Any]:
         settings = self.database.settings()
         bookmark_id = values.get("bookmark_id")
@@ -353,12 +568,47 @@ class DesktopServices:
             post = int(override.get("post_roll_ms", settings["post_roll_ms"]))
             start_ms = interval["media_start_ms"] if interval["media_start_ms"] is not None else interval["resolved_start_ms"] - pre
             end_ms = interval["media_end_ms"] if interval["media_end_ms"] is not None else interval["resolved_end_ms"] + post
+            uncapped_end_ms = end_ms
+            max_duration_ms = override.get("max_duration_ms")
+            if max_duration_ms is not None and end_ms - start_ms > int(max_duration_ms):
+                end_ms = start_ms + int(max_duration_ms)
+            search_job_id = values.get("search_job_id")
+            if search_job_id:
+                link = self.database.one(
+                    "SELECT 1 AS found FROM search_results WHERE search_job_id=? AND interval_id=?",
+                    (search_job_id, bookmark_id),
+                )
+                if not link:
+                    raise AppError("SEARCH_RESULT_MISMATCH", "The event does not belong to that search session.", 422)
+            else:
+                latest = self.database.one(
+                    """
+                    SELECT sr.search_job_id FROM search_results sr
+                    JOIN jobs j ON j.id=sr.search_job_id
+                    WHERE sr.interval_id=? ORDER BY j.created_ms DESC LIMIT 1
+                    """,
+                    (bookmark_id,),
+                )
+                search_job_id = latest["search_job_id"] if latest else None
+            bookmark = self.get_bookmark(bookmark_id)
+            attributes = bookmark.get("attributes", {}).get("hikvision", {})
+            origin = {
+                "bookmark_id": bookmark_id,
+                "search_job_id": search_job_id,
+                "area_name": attributes.get("area_name"),
+                "channel_label": bookmark["media_channel_label"],
+                "event_type": bookmark["event_type"],
+                "classification": attributes.get("classification"),
+                "event_window": {"start_at": bookmark["start_at"], "end_at": bookmark["end_at"]},
+                "candidate_window_capped": end_ms < uncapped_end_ms,
+            }
         else:
             channel_id = values.get("channel_id")
             if not channel_id or not values.get("from") or not values.get("to"):
                 raise AppError("MEDIA_REQUEST_INVALID", "Provide a bookmark or an explicit channel and time window.", 422)
             start_ms = self._external_time(values["from"], "from")
             end_ms = self._external_time(values["to"], "to")
+            origin = None
         if start_ms < 0 or end_ms <= start_ms:
             raise AppError("TIMELINE_RANGE_INVALID", "Clip end must be after start.", 422)
         self._channel_row(channel_id)
@@ -383,10 +633,10 @@ class DesktopServices:
             db.execute(
                 """
                 INSERT INTO clips(id, job_id, nvr_channel_id, requested_start_ms, requested_end_ms,
-                                  status, created_ms, accessed_ms)
-                VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
+                                  status, created_ms, accessed_ms, origin_json)
+                VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)
                 """,
-                (clip_id, job_id, channel_id, start_ms, end_ms, timestamp, timestamp),
+                (clip_id, job_id, channel_id, start_ms, end_ms, timestamp, timestamp, json.dumps(origin) if origin else None),
             )
         return self.get_clip(clip_id)
 
@@ -661,57 +911,6 @@ class DesktopServices:
             "clip_summary": self.database.all(
                 "SELECT status, COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS size_bytes FROM clips GROUP BY status"
             ),
-            "source_summary": source_summary,
-            "redaction": {
-                "removed": [
-                    "NVR host addresses",
-                    "usernames and passwords",
-                    "secret references",
-                    "authorization headers",
-                    "RTSP playback locators",
-                    "filesystem paths",
-                    "raw upstream bodies",
-                ],
-                "review_before_sharing": True,
-            },
-        }
-
-    def diagnostics(self) -> dict[str, Any]:
-        """Return a support bundle preview with an explicit redaction inventory."""
-        nvrs = self.database.all(
-            "SELECT id, name, model, firmware, timezone, clock_skew_ms, updated_ms FROM nvrs ORDER BY name"
-        )
-        for nvr in nvrs:
-            nvr["updated_at"] = rfc3339(nvr.pop("updated_ms"))
-            nvr["address"] = "redacted"
-        capabilities = self.database.all(
-            "SELECT nvr_id, capability, status, evidence_json, observed_ms FROM nvr_capabilities ORDER BY nvr_id, capability"
-        )
-        for capability in capabilities:
-            evidence = json.loads(capability.pop("evidence_json"))
-            capability["evidence"] = {
-                "endpoint": evidence.get("endpoint"),
-                "status_code": evidence.get("status_code"),
-                "fixture_hash": evidence.get("fixture_hash"),
-                "note": evidence.get("note"),
-            }
-            capability["observed_at"] = rfc3339(capability.pop("observed_ms"))
-        return {
-            "bundle_version": 1,
-            "generated_at": rfc3339(now_ms()),
-            "schema_version": self.database.schema_version(),
-            "settings": self.database.settings(),
-            "nvrs": nvrs,
-            "capabilities": capabilities,
-            "channel_summary": self.database.all(
-                "SELECT nvr_id, COUNT(*) AS total, SUM(online) AS online FROM nvr_channels GROUP BY nvr_id"
-            ),
-            "job_summary": self.database.all(
-                "SELECT kind, state, COUNT(*) AS count FROM jobs GROUP BY kind, state ORDER BY kind, state"
-            ),
-            "clip_summary": self.database.all(
-                "SELECT status, COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS size_bytes FROM clips GROUP BY status"
-            ),
             "source_summary": self.database.all(
                 "SELECT kind, COUNT(*) AS count, MAX(last_seen_ms) AS last_seen_ms FROM sources GROUP BY kind"
             ),
@@ -831,6 +1030,8 @@ class DesktopServices:
             return self._run_search(job["id"], payload)
         if job["kind"] == "clip":
             return self._run_clip(job["id"], payload)
+        if job["kind"] == "event_preview":
+            return self._run_event_preview(job["id"], payload)
         raise AppError("JOB_KIND_UNSUPPORTED", "Job kind is not supported.", 500)
 
     def _run_search(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -839,6 +1040,8 @@ class DesktopServices:
         timestamp = now_ms()
         source_id = stable_id("source", "nvr", nvr["id"])
         bookmark_ids: list[str] = []
+        requested_event_types = set(payload.get("event_types") or [])
+        self.database.execute("DELETE FROM search_results WHERE search_job_id=?", (job_id,))
         with self.database.transaction() as db:
             db.execute(
                 """
@@ -884,6 +1087,9 @@ class DesktopServices:
                     ),
                 )
                 for span in spans:
+                    canonical_event_type = _canonical_nvr_event_type(span.classification)
+                    if requested_event_types and canonical_event_type not in requested_event_types:
+                        continue
                     start_ms = utc_millis(span.start_at)
                     end_ms = utc_millis(span.end_at)
                     source_event_id = span.source_id or hashlib.sha256(
@@ -898,8 +1104,9 @@ class DesktopServices:
                             event_type, raw_start_ms, raw_end_ms, clock_correction_ms,
                             resolved_start_ms, resolved_end_ms, quality_gate, tags_json,
                             attributes_json, created_ms, updated_ms
-                        ) VALUES (?, ?, ?, ?, ?, 'nvr.recording', ?, ?, 0, ?, ?, 'unknown', ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'unknown', ?, ?, ?, ?)
                         ON CONFLICT(source_id, source_event_id) DO UPDATE SET
+                            event_type=excluded.event_type,
                             raw_start_ms=excluded.raw_start_ms, raw_end_ms=excluded.raw_end_ms,
                             resolved_start_ms=excluded.resolved_start_ms, resolved_end_ms=excluded.resolved_end_ms,
                             attributes_json=excluded.attributes_json, updated_ms=excluded.updated_ms
@@ -910,15 +1117,29 @@ class DesktopServices:
                             source_event_id,
                             source_channel_id,
                             channel_id,
+                            f"nvr.{canonical_event_type}",
                             start_ms,
                             end_ms,
                             start_ms,
                             end_ms,
                             json.dumps(["nvr_originated"]),
-                            json.dumps({"hikvision": {"classification": span.classification}}),
+                            json.dumps(
+                                {
+                                    "hikvision": {
+                                        "classification": span.classification,
+                                        "canonical_event_type": canonical_event_type,
+                                        "area_name": payload.get("area_name") or None,
+                                        "search_job_id": job_id,
+                                    }
+                                }
+                            ),
                             timestamp,
                             timestamp,
                         ),
+                    )
+                    db.execute(
+                        "INSERT OR IGNORE INTO search_results(search_job_id, interval_id) VALUES (?, ?)",
+                        (job_id, interval_id),
                     )
                     db.execute(
                         """
@@ -943,6 +1164,43 @@ class DesktopServices:
                 ((index + 1) / len(payload["channel_ids"]), now_ms(), job_id),
             )
         return {"bookmark_ids": bookmark_ids, "count": len(bookmark_ids)}
+
+    def _run_event_preview(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self.database.execute(
+            "UPDATE event_previews SET status='generating', updated_ms=? WHERE interval_id=?",
+            (now_ms(), payload["interval_id"]),
+        )
+        channel = self._channel_row(payload["channel_id"])
+        nvr = self._nvr_row(channel["nvr_id"])
+        if not channel["primary_track_id"]:
+            raise AppError("CAPABILITY_PLAYBACK_TRACK_UNKNOWN", "Channel has no playback track identity.", 422)
+        query = RecordingQuery(
+            channel["external_channel_id"], channel["primary_track_id"],
+            from_utc_millis(payload["start_ms"]), from_utc_millis(payload["end_ms"]),
+        )
+        adapter = self._adapter_for_row(nvr)
+        try:
+            spans = adapter.search_all_recordings(query)
+            resolution = adapter.resolve_media(spans, query.start_at, query.end_at)
+        except HikvisionError as exc:
+            raise AppError(exc.code, "NVR event preview could not be resolved.", 502) from exc
+        if not resolution.playback_locators:
+            raise AppError("RECORDING_NOT_FOUND", "No NVR recording covers the event preview.", 409)
+        username, password = self.secret_store.get(nvr["secret_ref"])
+        preview_id = stable_id("preview", payload["interval_id"])
+        path = self.media_runner.generate_preview(
+            preview_id=preview_id,
+            playback_locator=resolution.playback_locators[0],
+            username=username,
+            password=password,
+            cancel_requested=lambda: self._cancel_requested(job_id),
+        )
+        relative_path = path.resolve().relative_to(self.config.clip_dir.resolve()).as_posix()
+        self.database.execute(
+            "UPDATE event_previews SET status='ready', relative_path=?, updated_ms=? WHERE interval_id=?",
+            (relative_path, now_ms(), payload["interval_id"]),
+        )
+        return {"interval_id": payload["interval_id"]}
 
     def _run_clip(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         channel = self._channel_row(payload["channel_id"])
@@ -976,6 +1234,7 @@ class DesktopServices:
             username=username,
             password=password,
             audio_policy=payload["audio_policy"],
+            max_duration_seconds=(payload["end_ms"] - payload["start_ms"]) / 1000,
             cancel_requested=lambda: self._cancel_requested(job_id),
         )
         if self._cancel_requested(job_id):
@@ -1213,6 +1472,33 @@ class DesktopServices:
             "size_bytes": row["size_bytes"],
             "created_at": rfc3339(row["created_ms"]),
             "content_url": f"/api/v1/clips/{row['id']}/content" if row["status"] == "ready" else None,
+            "origin": json.loads(row["origin_json"]) if row.get("origin_json") else None,
+        }
+
+    @staticmethod
+    def _public_event_preview(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "bookmark_id": row["interval_id"],
+            "job_id": row["job_id"],
+            "status": row["status"],
+            "content_url": (
+                f"/api/v1/bookmarks/{row['interval_id']}/preview/content"
+                if row["status"] == "ready" else None
+            ),
+        }
+
+    @staticmethod
+    def _public_search_preset(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "nvr_id": row["nvr_id"],
+            "area_name": row["area_name"],
+            "channel_ids": json.loads(row["channel_ids_json"]),
+            "event_types": json.loads(row["event_types_json"]),
+            "created_at": rfc3339(row["created_ms"]),
+            "updated_at": rfc3339(row["updated_ms"]),
+            "last_used_at": rfc3339(row["last_used_ms"]),
         }
 
     @staticmethod
@@ -1256,12 +1542,29 @@ class JobWorker:
                 self.services.database.execute(
                     "UPDATE clips SET status='failed' WHERE id=?", (payload["clip_id"],)
                 )
+            if job["kind"] == "event_preview":
+                payload = json.loads(job["payload_json"])
+                self.services.database.execute(
+                    "UPDATE event_previews SET status='failed', updated_ms=? WHERE interval_id=?",
+                    (now_ms(), payload["interval_id"]),
+                )
         except BaseException:
             self._finish(
                 job["id"],
                 "failed",
                 error=AppError("JOB_INTERNAL_ERROR", "The job failed unexpectedly.", 500),
             )
+            if job["kind"] == "clip":
+                payload = json.loads(job["payload_json"])
+                self.services.database.execute(
+                    "UPDATE clips SET status='failed' WHERE id=?", (payload["clip_id"],)
+                )
+            if job["kind"] == "event_preview":
+                payload = json.loads(job["payload_json"])
+                self.services.database.execute(
+                    "UPDATE event_previews SET status='failed', updated_ms=? WHERE interval_id=?",
+                    (now_ms(), payload["interval_id"]),
+                )
         else:
             self._finish(job["id"], "succeeded", result=result)
         return True

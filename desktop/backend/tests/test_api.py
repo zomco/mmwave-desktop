@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tracecue_desktop.app import create_app
@@ -20,7 +21,7 @@ def test_status_reports_schema_and_media_without_paths(services) -> None:
     response = client(services).get("/api/v1/status")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["bind_host"] == "127.0.0.1"
     assert "data_dir" not in json.dumps(payload)
 
@@ -53,17 +54,26 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert services.worker.process_once()
     finished = api.get(f"/api/v1/jobs/{search.json()['id']}").json()
     assert finished["state"] == "succeeded"
+    search_results = api.get(f"/api/v1/search-jobs/{search.json()['id']}/results").json()
+    assert len(search_results["items"]) == 1
 
     bookmarks = api.get("/api/v1/bookmarks").json()["items"]
     assert len(bookmarks) == 1
     assert bookmarks[0]["quality"]["gate"] == "unknown"
     assert "nvr_originated" in bookmarks[0]["tags"]
 
+    preview = api.post(f"/api/v1/bookmarks/{bookmarks[0]['id']}/preview")
+    assert preview.status_code == 202
+    assert services.worker.process_once()
+    ready_preview = api.get(f"/api/v1/bookmarks/{bookmarks[0]['id']}/preview").json()
+    assert ready_preview["status"] == "ready"
+    assert api.get(ready_preview["content_url"]).content.startswith(b"\xff\xd8\xff")
+
     clip = api.post(
         "/api/v1/clips",
         json={
             "bookmark_id": bookmarks[0]["id"],
-            "window_override": {"pre_roll_ms": 0, "post_roll_ms": 0},
+            "window_override": {"pre_roll_ms": 0, "post_roll_ms": 0, "max_duration_ms": 5000},
             "audio_policy": "prefer",
         },
     )
@@ -71,6 +81,14 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert services.worker.process_once()
     ready = api.get(f"/api/v1/clips/{clip.json()['id']}").json()
     assert ready["status"] == "ready"
+    assert ready["origin"]["bookmark_id"] == bookmarks[0]["id"]
+    assert ready["origin"]["search_job_id"] == search.json()["id"]
+    assert ready["origin"]["classification"] == "motion"
+    assert ready["origin"]["candidate_window_capped"] is True
+    assert ready["requested_window"] == {
+        "start_at": "2026-08-12T08:00:00.000Z",
+        "end_at": "2026-08-12T08:00:05.000Z",
+    }
 
     ranged = api.get(ready["content_url"], headers={"Range": "bytes=10-19"})
     assert ranged.status_code == 206
@@ -79,6 +97,71 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
 
     invalid = api.get(ready["content_url"], headers={"Range": "bytes=1000-1001"})
     assert invalid.status_code == 416
+
+
+def test_device_discovery_event_audit_and_saved_area_filter(services, nvr) -> None:
+    api = client(services)
+    discovered = api.post("/api/v1/nvrs/discover", json={"timeout_seconds": 1}).json()
+    assert discovered == [
+        {
+            "host": "192.0.2.20",
+            "http_port": 80,
+            "use_https": False,
+            "name": "Discovered recorder",
+            "model": "fixture-discovery",
+            "device_types": ["NetworkVideoTransmitter"],
+            "discovery_protocol": "onvif_ws_discovery",
+            "already_added": False,
+        }
+    ]
+
+    audit = api.post(f"/api/v1/nvrs/{nvr['id']}/event-audit").json()
+    assert audit["rules"][0]["enabled"] is True
+    assert audit["rules"][0]["channel_label"] == "Front door"
+    assert api.get(f"/api/v1/nvrs/{nvr['id']}/event-audit").json() == audit
+
+    channel = api.get(f"/api/v1/nvrs/{nvr['id']}/channels").json()[0]
+    preset = api.post(
+        "/api/v1/search-presets",
+        json={
+            "name": "Front entrance motion",
+            "nvr_id": nvr["id"],
+            "area_name": "Front entrance",
+            "channel_ids": [channel["id"]],
+            "event_types": ["motion"],
+        },
+    )
+    assert preset.status_code == 201
+    assert api.get("/api/v1/search-presets").json()[0]["area_name"] == "Front entrance"
+    assert api.delete(f"/api/v1/search-presets/{preset.json()['id']}").status_code == 204
+
+
+def test_delete_nvr_removes_local_credentials_and_indexed_sources(services, nvr) -> None:
+    api = client(services)
+    nvr_row = services.database.one("SELECT secret_ref FROM nvrs WHERE id=?", (nvr["id"],))
+    channels = api.get(f"/api/v1/nvrs/{nvr['id']}/channels").json()
+    search = api.post(
+        "/api/v1/search-jobs",
+        json={
+            "nvr_id": nvr["id"],
+            "channel_ids": [channels[0]["id"]],
+            "from": "2026-08-12T08:00:00Z",
+            "to": "2026-08-12T08:01:00Z",
+        },
+    )
+    assert search.status_code == 202
+    assert services.worker.process_once()
+    assert api.get("/api/v1/sources").json()
+
+    deleted = api.delete(f"/api/v1/nvrs/{nvr['id']}")
+
+    assert deleted.status_code == 204
+    assert api.get("/api/v1/nvrs").json() == []
+    assert api.get("/api/v1/sources").json() == []
+    assert api.get("/api/v1/source-channels").json() == []
+    assert api.get("/api/v1/bookmarks").json()["items"] == []
+    with pytest.raises(KeyError):
+        services.secret_store.get(nvr_row["secret_ref"])
 
 
 def test_timeline_inspect_commit_mapping_and_idempotency(services, nvr) -> None:
@@ -127,17 +210,6 @@ def test_error_envelope_is_stable_and_safe(services) -> None:
     assert error["code"] == "NVR_NOT_FOUND"
     assert error["request_id"].startswith("req_")
     assert "Traceback" not in json.dumps(error)
-
-
-def test_diagnostics_bundle_redacts_addresses_credentials_and_locators(services, nvr) -> None:
-    response = client(services).get("/api/v1/diagnostics/export")
-    assert response.status_code == 200
-    raw = response.content
-    assert b"192.0.2.10" not in raw
-    assert b"fixture-user" not in raw
-    assert b"secret-password" not in raw
-    assert b"rtsp://" not in raw
-    assert response.headers["content-disposition"].endswith('tracecue-diagnostics.json"')
 
 
 def test_diagnostics_bundle_redacts_addresses_credentials_and_locators(services, nvr) -> None:

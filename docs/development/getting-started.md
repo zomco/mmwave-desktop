@@ -29,6 +29,21 @@ npm test --prefix desktop/frontend
 npm run build --prefix desktop/frontend
 ```
 
+For a local hardware/media run, fetch the pinned tools and start the editable
+desktop service from the repository:
+
+```powershell
+.\packaging\windows\fetch-ffmpeg.ps1
+$env:TRACECUE_FRONTEND_DIR = (Resolve-Path .\desktop\frontend\dist).Path
+tracecue-desktop
+```
+
+On Windows, an editable checkout automatically discovers the verified binaries
+under `packaging/windows/tools/`. `TRACECUE_FFMPEG_PATH` and
+`TRACECUE_FFPROBE_PATH` may be set to explicit executable paths when a different
+development layout is required. Packaged builds continue to use their adjacent
+`tools/` directory.
+
 Then read, in order:
 
 1. Root README and `AGENTS.md`.

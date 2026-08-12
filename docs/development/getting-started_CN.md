@@ -29,6 +29,19 @@ npm test --prefix desktop/frontend
 npm run build --prefix desktop/frontend
 ```
 
+如需在本地连接硬件并测试媒体导出，请先取得固定工具，再从仓库启动可编辑安装的桌面服务：
+
+```powershell
+.\packaging\windows\fetch-ffmpeg.ps1
+$env:TRACECUE_FRONTEND_DIR = (Resolve-Path .\desktop\frontend\dist).Path
+tracecue-desktop
+```
+
+Windows 下，可编辑检出会自动发现 `packaging/windows/tools/` 中已经校验的二进制。
+若开发目录布局不同，可通过 `TRACECUE_FFMPEG_PATH` 和
+`TRACECUE_FFPROBE_PATH` 指定可执行文件的完整路径；打包版本仍使用程序相邻的
+`tools/` 目录。
+
 然后按顺序阅读：
 
 1. 根 README 和 `AGENTS_CN.md`；

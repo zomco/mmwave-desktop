@@ -2,16 +2,27 @@
 
 [中文](ux-information-architecture_CN.md)
 
-## First run
+## Primary navigation (NVR-first release)
 
 ```text
-Start TraceCue
-└─ Add NVR
-   ├─ Address and credentials
-   ├─ Connection and clock test
-   ├─ Capability report
-   ├─ Channel synchronization
-   └─ Room/channel aliases
+Event search
+├─ Time and business area
+├─ Camera and event-type filters
+├─ Saved filters
+├─ Event preview gallery
+└─ Generate candidate clip
+
+Device center
+├─ Automatic LAN discovery
+├─ Select device and enter credentials
+├─ Channels and business aliases
+└─ Read-only event/rule/notification audit
+
+Candidates and exports
+├─ Browser playback and MP4 download
+└─ Search, area, camera and event provenance
+
+Settings
 ```
 
 ## NVR-only navigation
@@ -29,7 +40,7 @@ Devices
 Diagnostics and settings
 ```
 
-A persistent notice must say that candidates come from NVR recording/event metadata and can contain false positives. Do not label this view "high confidence" or "noise reduced."
+A persistent notice says candidates come from NVR recording/event metadata and can contain false positives. Do not label this view "high confidence" or "noise reduced." Sources/mappings and comparison are not primary-navigation items until Gateway/Engine evidence is ready.
 
 ## Timeline-backed navigation
 

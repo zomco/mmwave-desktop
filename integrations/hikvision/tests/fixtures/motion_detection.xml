@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MotionDetection xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>true</enabled>
+  <MotionDetectionLayout><sensitivityLevel>60</sensitivityLevel><DetectionRegion><id>1</id></DetectionRegion></MotionDetectionLayout>
+  <Schedule><TimeBlock><beginTime>00:00:00</beginTime><endTime>24:00:00</endTime></TimeBlock></Schedule>
+</MotionDetection>

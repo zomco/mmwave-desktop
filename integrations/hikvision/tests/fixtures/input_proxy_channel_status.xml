@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<InputProxyChannelStatusList xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <InputProxyChannelStatus>
+    <id>1</id>
+    <sourceInputPortDescriptor>
+      <name>Front door</name>
+      <srcInputPort>1</srcInputPort>
+    </sourceInputPortDescriptor>
+    <online>true</online>
+    <streamingProxyChannelIdList>
+      <streamingProxyChannelId>101</streamingProxyChannelId>
+      <streamingProxyChannelId>102</streamingProxyChannelId>
+    </streamingProxyChannelIdList>
+  </InputProxyChannelStatus>
+  <InputProxyChannelStatus>
+    <id>2</id>
+    <online>false</online>
+    <streamingProxyChannelIdList>
+      <streamingProxyChannelId>201</streamingProxyChannelId>
+    </streamingProxyChannelIdList>
+  </InputProxyChannelStatus>
+</InputProxyChannelStatusList>

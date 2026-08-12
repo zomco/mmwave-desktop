@@ -7,7 +7,7 @@ Desktop is the primary user-facing application: a Windows process serving a same
 ## Owns
 
 - NVR onboarding, capability evidence and channel aliases.
-- Bookmark search and timeline import/mapping.
+- Event-first recording search, saved area/channel/type filters and timeline import/mapping.
 - Recording coverage resolution through adapters.
 - Persistent background jobs and FFmpeg clip generation.
 - SQLite migrations, local clip quota and support diagnostics.
@@ -33,7 +33,7 @@ One supported NVR, one channel and one time window produce an H.264 MP4 that pla
 
 ## Implemented baseline
 
-The backend implements the HTTP API v1 routes, SQLite migration v1, DPAPI credential references, evidence-backed NVR onboarding, channel aliases, persistent searches/jobs, bookmark review, inspect/commit timeline imports, source-to-space-to-camera mapping, FFmpeg remux/transcode/verify, atomic clips, quota retention and bounded Range delivery. The SPA implements the first-run, review, device, source/mapping, comparison, clip and diagnostics views.
+The backend implements the HTTP API v1 routes, SQLite migrations v1-v2, DPAPI credential references, bounded ONVIF/private-subnet discovery, evidence-backed NVR onboarding, event-rule audits, channel aliases, saved search presets, search-scoped event results, event previews, persistent jobs, timeline imports/mapping, FFmpeg remux/transcode/verify, atomic clips with event/search provenance, quota retention and bounded Range delivery. The React/Tailwind SPA keeps four primary views: event search, device center, candidates/exports and settings. Timeline comparison/mapping remains an advanced later-stage surface.
 
 ```powershell
 python -m pip install -r requirements-dev.lock.txt

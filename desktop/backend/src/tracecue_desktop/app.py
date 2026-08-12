@@ -26,10 +26,12 @@ from .schemas import (
     ChannelPatchRequest,
     ClipRequest,
     CommitImportRequest,
+    DiscoveryRequest,
     NvrCreateRequest,
     NvrPatchRequest,
     ProbeRequest,
     SearchRequest,
+    SearchPresetRequest,
     SettingsPatchRequest,
 )
 from .services import DesktopServices
@@ -149,24 +151,15 @@ def create_app(
             headers={"Content-Disposition": 'attachment; filename="tracecue-diagnostics.json"'},
         )
 
-    @app.get(api + "/diagnostics")
-    def diagnostics() -> dict:
-        return application_services.diagnostics()
-
-    @app.get(api + "/diagnostics/export")
-    def export_diagnostics() -> Response:
-        content = json.dumps(
-            application_services.diagnostics(), ensure_ascii=False, indent=2
-        ).encode("utf-8")
-        return Response(
-            content=content,
-            media_type="application/json",
-            headers={"Content-Disposition": 'attachment; filename="tracecue-diagnostics.json"'},
-        )
-
     @app.post(api + "/nvrs/probe")
     def probe_nvr(request: ProbeRequest) -> dict:
         return application_services.probe_nvr(request.model_dump())
+
+    @app.post(api + "/nvrs/discover")
+    def discover_nvrs(request: DiscoveryRequest | None = None) -> list[dict]:
+        return application_services.discover_nvrs(
+            request.timeout_seconds if request else 2.5
+        )
 
     @app.post(api + "/nvrs", status_code=201)
     def create_nvr(request: NvrCreateRequest) -> dict:
@@ -201,6 +194,14 @@ def create_app(
     def list_capabilities(nvr_id: str) -> list[dict]:
         return application_services.capabilities(nvr_id)
 
+    @app.get(api + "/nvrs/{nvr_id}/event-audit")
+    def get_event_audit(nvr_id: str) -> dict:
+        return application_services.get_event_audit(nvr_id)
+
+    @app.post(api + "/nvrs/{nvr_id}/event-audit")
+    def refresh_event_audit(nvr_id: str) -> dict:
+        return application_services.audit_nvr_events(nvr_id)
+
     @app.patch(api + "/channels/{channel_id}")
     def patch_channel(channel_id: str, request: ChannelPatchRequest) -> dict:
         return application_services.patch_channel(channel_id, request.model_dump())
@@ -217,6 +218,23 @@ def create_app(
             raise AppError("JOB_KIND_MISMATCH", "Job is not a recording search.", 404)
         return job
 
+    @app.get(api + "/search-jobs/{job_id}/results")
+    def get_search_results(job_id: str) -> dict:
+        return application_services.search_results(job_id)
+
+    @app.get(api + "/search-presets")
+    def list_search_presets() -> list[dict]:
+        return application_services.list_search_presets()
+
+    @app.post(api + "/search-presets", status_code=201)
+    def create_search_preset(request: SearchPresetRequest) -> dict:
+        return application_services.create_search_preset(request.model_dump())
+
+    @app.delete(api + "/search-presets/{preset_id}", status_code=204)
+    def delete_search_preset(preset_id: str) -> Response:
+        application_services.delete_search_preset(preset_id)
+        return Response(status_code=204)
+
     @app.get(api + "/bookmarks")
     def list_bookmarks(
         limit: int = Query(default=50),
@@ -230,6 +248,18 @@ def create_app(
     @app.get(api + "/bookmarks/{bookmark_id}")
     def get_bookmark(bookmark_id: str) -> dict:
         return application_services.get_bookmark(bookmark_id)
+
+    @app.get(api + "/bookmarks/{bookmark_id}/preview")
+    def get_event_preview(bookmark_id: str) -> dict:
+        return application_services.get_event_preview(bookmark_id)
+
+    @app.post(api + "/bookmarks/{bookmark_id}/preview", status_code=202)
+    def create_event_preview(bookmark_id: str) -> dict:
+        return application_services.enqueue_event_preview(bookmark_id)
+
+    @app.get(api + "/bookmarks/{bookmark_id}/preview/content")
+    def event_preview_content(bookmark_id: str) -> FileResponse:
+        return FileResponse(application_services.event_preview_file(bookmark_id), media_type="image/jpeg")
 
     @app.post(api + "/clips", status_code=202)
     def create_clip(request: ClipRequest) -> dict:

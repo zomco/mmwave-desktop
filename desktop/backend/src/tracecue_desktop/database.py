@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATION_1 = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -187,6 +187,39 @@ CREATE TABLE IF NOT EXISTS clips (
 );
 """
 
+MIGRATION_2 = """
+ALTER TABLE clips ADD COLUMN origin_json TEXT;
+CREATE TABLE search_presets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    nvr_id TEXT NOT NULL REFERENCES nvrs(id) ON DELETE CASCADE,
+    area_name TEXT NOT NULL,
+    channel_ids_json TEXT NOT NULL,
+    event_types_json TEXT NOT NULL,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL,
+    last_used_ms INTEGER
+);
+CREATE TABLE search_results (
+    search_job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    interval_id TEXT NOT NULL REFERENCES intervals(id) ON DELETE CASCADE,
+    PRIMARY KEY (search_job_id, interval_id)
+);
+CREATE TABLE nvr_event_audits (
+    nvr_id TEXT PRIMARY KEY REFERENCES nvrs(id) ON DELETE CASCADE,
+    report_json TEXT NOT NULL,
+    observed_ms INTEGER NOT NULL
+);
+CREATE TABLE event_previews (
+    interval_id TEXT PRIMARY KEY REFERENCES intervals(id) ON DELETE CASCADE,
+    job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued', 'generating', 'ready', 'failed')),
+    relative_path TEXT,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL
+);
+"""
+
 
 DEFAULT_SETTINGS = {
     "clip_quota_bytes": 10 * 1024 * 1024 * 1024,
@@ -215,8 +248,17 @@ class Database:
             connection.executescript(MIGRATION_1)
             connection.execute(
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
-                (SCHEMA_VERSION, now_ms),
+                (1, now_ms),
             )
+            current = connection.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+            ).fetchone()[0]
+            if current < 2:
+                connection.executescript(MIGRATION_2)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
+                    (2, now_ms),
+                )
             for key, value in DEFAULT_SETTINGS.items():
                 connection.execute(
                     "INSERT OR IGNORE INTO settings(key, value_json) VALUES (?, ?)",
@@ -231,6 +273,26 @@ class Database:
                 WHERE state='running'
                 """,
                 (now_ms, now_ms),
+            )
+            connection.execute(
+                """
+                UPDATE clips
+                SET status='failed'
+                WHERE status IN ('queued', 'generating')
+                  AND job_id IN (
+                      SELECT id FROM jobs WHERE state IN ('failed', 'cancelled', 'interrupted')
+                  )
+                """
+            )
+            connection.execute(
+                """
+                UPDATE event_previews SET status='failed', updated_ms=?
+                WHERE status IN ('queued', 'generating')
+                  AND job_id IN (
+                      SELECT id FROM jobs WHERE state IN ('failed', 'cancelled', 'interrupted')
+                  )
+                """,
+                (now_ms,),
             )
 
     @contextmanager

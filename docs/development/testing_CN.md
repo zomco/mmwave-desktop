@@ -38,6 +38,13 @@ desktop frontend: npm ci --prefix desktop/frontend && npm test --prefix desktop/
 
 `packaging/windows/build.ps1 -Mode Verify` 在 Windows 上运行全部软件检查。除非许可证、FFmpeg 哈希/声明和签名输入得到明确满足，`-Mode Release` 会按设计阻止发布。
 
+Windows 验证脚本会为 pytest 使用仓库本地 `build/` 下的唯一基础目录。这样即使 `%TEMP%\pytest-of-<user>` 曾由提权进程、IDE 沙箱或其他 Windows 身份创建，也不会触发 `WinError 5`。直接运行 pytest 时可使用相同方式：
+
+```powershell
+$pytestTemp = Join-Path (Resolve-Path ./build) ("pytest-manual-" + [guid]::NewGuid().ToString("N"))
+python -m pytest engine/tests integrations/hikvision/tests gateway/tests desktop/backend/tests --basetemp $pytestTemp
+```
+
 禁止只断言框架能启动的占位测试。测试应保护产品不变量、协议观测或失败模式。
 
 ## Fixture 策略

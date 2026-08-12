@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comparisonMetrics, sourcePresentation } from "./lib";
+import { comparisonMetrics, dateToLocalInput, nvrProbePayload, sourcePresentation } from "./lib";
 import type { Bookmark } from "./types";
 
 function bookmark(overrides: Partial<Bookmark>): Bookmark {
@@ -19,6 +19,7 @@ function bookmark(overrides: Partial<Bookmark>): Bookmark {
     confidence: null,
     media_window: null,
     tags: [],
+    attributes: {},
     ...overrides,
   };
 }
@@ -33,5 +34,36 @@ describe("honest source presentation", () => {
     const items = [bookmark({ id: "nvr" }), bookmark({ id: "sensor", source: { id: "source-2", kind: "timeline", external_id: "gateway" }, quality: { gate: "pass", score: 0.9 } })];
     expect(comparisonMetrics(items).canClaimImprovement).toBe(false);
     expect(comparisonMetrics(items, 0.98).canClaimImprovement).toBe(true);
+  });
+});
+
+describe("NVR onboarding payloads", () => {
+  it("does not send the display name to the strict read-only probe contract", () => {
+    const payload = nvrProbePayload({
+      name: "Front desk",
+      host: "192.0.2.10",
+      username: "operator",
+      password: "fixture-password",
+      http_port: 80,
+      use_https: false,
+      verify_tls: true,
+    });
+
+    expect(payload).toEqual({
+      host: "192.0.2.10",
+      username: "operator",
+      password: "fixture-password",
+      http_port: 80,
+      use_https: false,
+      verify_tls: true,
+    });
+    expect(payload).not.toHaveProperty("name");
+  });
+});
+
+describe("local search windows", () => {
+  it("formats datetime-local defaults with local clock fields instead of UTC fields", () => {
+    const localTime = new Date(2026, 7, 12, 18, 30, 45);
+    expect(dateToLocalInput(localTime)).toBe("2026-08-12T18:30");
   });
 });

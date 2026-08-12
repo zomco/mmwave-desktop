@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EventTrigger xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <eventType>VMD</eventType>
+  <EventTriggerNotificationList>
+    <EventTriggerNotification><notificationMethod>record</notificationMethod></EventTriggerNotification>
+  </EventTriggerNotificationList>
+</EventTrigger>

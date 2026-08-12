@@ -42,11 +42,27 @@ class SearchRequest(ApiModel):
     from_at: str = Field(alias="from")
     to_at: str = Field(alias="to")
     source_modes: list[str] = Field(default_factory=lambda: ["record_classification"])
+    area_name: str | None = Field(default=None, max_length=200)
+    event_types: list[str] = Field(default_factory=list, max_length=32)
+    preset_id: str | None = None
+
+
+class SearchPresetRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=200)
+    nvr_id: str
+    area_name: str = Field(min_length=1, max_length=200)
+    channel_ids: list[str] = Field(min_length=1, max_length=64)
+    event_types: list[str] = Field(default_factory=list, max_length=32)
+
+
+class DiscoveryRequest(ApiModel):
+    timeout_seconds: float = Field(default=2.5, ge=0.5, le=5.0)
 
 
 class WindowOverride(ApiModel):
     pre_roll_ms: int = Field(default=5_000, ge=0, le=3_600_000)
     post_roll_ms: int = Field(default=10_000, ge=0, le=3_600_000)
+    max_duration_ms: int | None = Field(default=None, ge=1_000, le=600_000)
 
 
 class ClipRequest(ApiModel):
@@ -56,6 +72,7 @@ class ClipRequest(ApiModel):
     to_at: str | None = Field(default=None, alias="to")
     window_override: WindowOverride | None = None
     audio_policy: str = Field(default="prefer", pattern="^(prefer|preserve|omit)$")
+    search_job_id: str | None = None
 
 
 class SettingsPatchRequest(ApiModel):
@@ -74,4 +91,3 @@ class BindingRequest(ApiModel):
     space_name: str | None = Field(default=None, min_length=1, max_length=200)
     nvr_channel_id: str
     clock_correction_ms: int = Field(default=0, ge=-86_400_000, le=86_400_000)
-

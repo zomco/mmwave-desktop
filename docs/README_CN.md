@@ -10,6 +10,7 @@
 - [路线图](product/roadmap_CN.md)：可执行交付切片和退出条件。
 - [验证方案](product/validation_CN.md)：产品承诺前需要的证据与指标。
 - [UX 信息架构](product/ux-information-architecture_CN.md)：仅 NVR 与接入 timeline 后的导航。
+- [Event-to-trace 策略](product/event-to-trace-strategy_CN.md)：目标区域映射方案、当前决策和证据边界。
 - [市场策略](product/market-strategy_CN.md)：楔子、竞品、护城河和渠道假设。
 - [命名](product/naming_CN.md)：当前暂定名和清权状态。
 

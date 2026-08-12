@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+import uuid
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from .errors import AuthenticationError, PaginationError, UnsafePayloadError, UpstreamError
 from .models import (
@@ -14,6 +15,8 @@ from .models import (
     CapabilityReport,
     ClockObservation,
     DeviceIdentity,
+    EventAuditReport,
+    EventRuleStatus,
     MediaChannel,
     MediaResolution,
     Page,
@@ -27,6 +30,7 @@ from .xmlutil import children, local_name, parse_xml, text
 DEVICE_INFO = "/ISAPI/System/deviceInfo"
 DEVICE_TIME = "/ISAPI/System/time"
 CHANNELS = "/ISAPI/System/Video/inputs/channels"
+INPUT_PROXY_CHANNEL_STATUS = "/ISAPI/ContentMgmt/InputProxy/channels/status"
 RECORD_SEARCH = "/ISAPI/ContentMgmt/search"
 _OFFSET = re.compile(r"(?:Z|[+-][0-9]{2}:[0-9]{2})$")
 
@@ -56,13 +60,55 @@ class HikvisionAdapter:
             evidence.append(self._evidence("device_time", "supported", DEVICE_TIME, time_response, observed_at))
             if abs(clock.estimated_skew_ms) >= 30_000:
                 warnings.append({"code": "CLOCK_SKEW", "message": "Device clock differs from this computer."})
+        except AuthenticationError:
+            evidence.append(
+                self._evidence(
+                    "device_time",
+                    "degraded",
+                    DEVICE_TIME,
+                    None,
+                    observed_at,
+                    "endpoint denied access after device authentication",
+                )
+            )
+            warnings.append(
+                {
+                    "code": "DEVICE_TIME_ACCESS_DENIED",
+                    "message": "The NVR identity was authenticated, but its time endpoint denied access.",
+                }
+            )
         except (UpstreamError, UnsafePayloadError):
             evidence.append(self._evidence("device_time", "degraded", DEVICE_TIME, None, observed_at))
 
         try:
-            channel_response = self.transport.request("GET", CHANNELS)
-            self._parse_channels(channel_response)
-            evidence.append(self._evidence("channel_discovery", "supported", CHANNELS, channel_response, observed_at))
+            channels, channel_endpoint, channel_response = self._discover_channels()
+            evidence.append(
+                self._evidence(
+                    "channel_discovery",
+                    "supported",
+                    channel_endpoint,
+                    channel_response,
+                    observed_at,
+                    f"discovered {len(channels)} channel(s)",
+                )
+            )
+        except AuthenticationError:
+            evidence.append(
+                self._evidence(
+                    "channel_discovery",
+                    "degraded",
+                    CHANNELS,
+                    None,
+                    observed_at,
+                    "endpoint denied access after device authentication",
+                )
+            )
+            warnings.append(
+                {
+                    "code": "CHANNEL_DISCOVERY_ACCESS_DENIED",
+                    "message": "The NVR identity was authenticated, but its channel endpoint denied access.",
+                }
+            )
         except (UpstreamError, UnsafePayloadError):
             evidence.append(self._evidence("channel_discovery", "degraded", CHANNELS, None, observed_at))
 
@@ -79,7 +125,93 @@ class HikvisionAdapter:
         return CapabilityReport(True, True, device, clock, tuple(evidence), tuple(warnings))
 
     def list_channels(self) -> tuple[MediaChannel, ...]:
-        return self._parse_channels(self.transport.request("GET", CHANNELS))
+        channels, _, _ = self._discover_channels()
+        return channels
+
+    def inspect_event_settings(
+        self, channels: tuple[MediaChannel, ...]
+    ) -> EventAuditReport:
+        """Read a bounded summary of event rules without changing device state."""
+        if len(channels) > 64:
+            raise ValueError("event audit is limited to 64 channels")
+        rules: list[EventRuleStatus] = []
+        warnings: list[dict[str, str]] = []
+        for channel in channels:
+            if not channel.enabled:
+                continue
+            track_id = channel.stream_track_ids[0] if channel.stream_track_ids else None
+            probes = (
+                ("motion", channel.external_id, f"/ISAPI/System/Video/inputs/channels/{channel.external_id}/motionDetection", "VMD"),
+                ("line_crossing", track_id, f"/ISAPI/Smart/LineDetection/{track_id}" if track_id else None, "linedetection"),
+                ("region_intrusion", track_id, f"/ISAPI/Smart/FieldDetection/{track_id}" if track_id else None, "fielddetection"),
+            )
+            for event_type, identity, endpoint, trigger_type in probes:
+                if not identity or not endpoint:
+                    rules.append(
+                        EventRuleStatus(
+                            channel.external_id, track_id, event_type, "unknown", None, None,
+                            None, None, None, None, "channel has no evidenced stream track identity",
+                        )
+                    )
+                    continue
+                rules.append(
+                    self._inspect_event_rule(
+                        channel.external_id, track_id, event_type, endpoint,
+                        f"/ISAPI/Event/triggers/{trigger_type}-{identity}",
+                    )
+                )
+        if not rules:
+            warnings.append(
+                {"code": "EVENT_AUDIT_NO_ONLINE_CHANNELS", "message": "No enabled channel was available for event inspection."}
+            )
+        return EventAuditReport(self.now(), tuple(rules), tuple(warnings))
+
+    def _inspect_event_rule(
+        self,
+        channel_external_id: str,
+        track_id: str | None,
+        event_type: str,
+        endpoint: str,
+        trigger_endpoint: str,
+    ) -> EventRuleStatus:
+        try:
+            response = self.transport.request("GET", endpoint, maximum_bytes=512 * 1024)
+        except AuthenticationError:
+            return EventRuleStatus(
+                channel_external_id, track_id, event_type, "degraded", None, None,
+                None, None, None, endpoint, "event rule endpoint denied access",
+            )
+        except UpstreamError:
+            return EventRuleStatus(
+                channel_external_id, track_id, event_type, "unknown", None, None,
+                None, None, None, endpoint, "event rule endpoint unavailable on this model/firmware",
+            )
+        root = parse_xml(response.body)
+        enabled = _parse_bool(text(root, "enabled"))
+        sensitivity = _parse_int(text(root, "sensitivityLevel") or text(root, "sensitivity"), 0, 100)
+        region_names = {"Region", "DetectionRegion", "FieldDetectionRegion", "LineDetectionRegion"}
+        region_count = sum(1 for item in root.iter() if local_name(item.tag) in region_names)
+        schedule_names = {"TimeBlock", "TimeSegment", "ScheduleAction"}
+        schedule_block_count = sum(1 for item in root.iter() if local_name(item.tag) in schedule_names)
+        notification_configured: bool | None = None
+        note = None
+        try:
+            trigger = self.transport.request("GET", trigger_endpoint, maximum_bytes=512 * 1024)
+            trigger_root = parse_xml(trigger.body)
+            notification_configured = any(
+                local_name(item.tag) in {"EventTriggerNotification", "notificationMethod"}
+                and (item.text or list(item))
+                for item in trigger_root.iter()
+            )
+        except AuthenticationError:
+            note = "event rule readable; linkage/notification endpoint denied access"
+        except UpstreamError:
+            note = "event rule readable; linkage/notification state unavailable"
+        return EventRuleStatus(
+            channel_external_id, track_id, event_type, "supported", enabled,
+            notification_configured, sensitivity, region_count, schedule_block_count,
+            endpoint, note,
+        )
 
     def search_recordings(self, query: RecordingQuery) -> Page:
         if query.end_at <= query.start_at:
@@ -198,6 +330,55 @@ class HikvisionAdapter:
             result.append(MediaChannel(external_id, name, enabled, input_port, tuple(dict.fromkeys(tracks))))
         return tuple(result)
 
+    def _discover_channels(
+        self,
+    ) -> tuple[tuple[MediaChannel, ...], str, HttpResponse]:
+        last_error: AuthenticationError | UpstreamError | None = None
+        for endpoint, parser in (
+            (CHANNELS, self._parse_channels),
+            (INPUT_PROXY_CHANNEL_STATUS, self._parse_input_proxy_channel_status),
+        ):
+            try:
+                response = self.transport.request("GET", endpoint)
+                return parser(response), endpoint, response
+            except (AuthenticationError, UpstreamError) as exc:
+                last_error = exc
+        assert last_error is not None
+        raise last_error
+
+    def _parse_input_proxy_channel_status(
+        self, response: HttpResponse
+    ) -> tuple[MediaChannel, ...]:
+        root = parse_xml(response.body)
+        result: list[MediaChannel] = []
+        for item in children(root, "InputProxyChannelStatus"):
+            external_id = text(item, "id")
+            if not external_id:
+                continue
+            name = text(item, "name") or f"Channel {external_id}"
+            online = (text(item, "online") or "false").lower() == "true"
+            input_port_text = text(item, "srcInputPort")
+            input_port = (
+                int(input_port_text)
+                if input_port_text and input_port_text.isdigit()
+                else None
+            )
+            tracks = tuple(
+                node.text.strip()
+                for node in item.iter()
+                if local_name(node.tag) == "streamingProxyChannelId" and node.text
+            )
+            result.append(
+                MediaChannel(
+                    external_id,
+                    name,
+                    online,
+                    input_port,
+                    tuple(dict.fromkeys(tracks)),
+                )
+            )
+        return tuple(result)
+
     def _parse_recordings(self, response: HttpResponse, query: RecordingQuery) -> Page:
         root = parse_xml(response.body)
         status = " ".join((text(root, "responseStatusStrg") or "").lower().split())
@@ -214,6 +395,7 @@ class HikvisionAdapter:
             if not locator:
                 continue
             _assert_safe_locator(locator)
+            locator = _normalize_playback_locator(locator)
             classification = text(item, "metadataDescriptor") or "unknown"
             source_id = text(item, "fileName") or text(item, "searchID")
             items.append(RecordingSpan(start, end, classification, locator, source_id))
@@ -246,9 +428,11 @@ class HikvisionAdapter:
 
     @staticmethod
     def _search_body(query: RecordingQuery) -> bytes:
-        search_id = hashlib.sha256(
-            f"{query.external_channel_id}|{query.start_at.isoformat()}|{query.end_at.isoformat()}".encode()
-        ).hexdigest()[:32]
+        search_id = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            "tracecue:recording-search:"
+            f"{query.external_channel_id}|{query.start_at.isoformat()}|{query.end_at.isoformat()}",
+        )
         start = query.start_at.isoformat().replace("+00:00", "Z")
         end = query.end_at.isoformat().replace("+00:00", "Z")
         track_id = html.escape(query.track_id)
@@ -256,7 +440,7 @@ class HikvisionAdapter:
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<CMSearchDescription xmlns="http://www.hikvision.com/ver20/XMLSchema">'
             f"<searchID>{search_id}</searchID>"
-            f"<trackList><trackID>{track_id}</trackID></trackList>"
+            f"<trackIDList><trackID>{track_id}</trackID></trackIDList>"
             f"<timeSpanList><timeSpan><startTime>{start}</startTime><endTime>{end}</endTime></timeSpan></timeSpanList>"
             f"<maxResults>{query.page_size}</maxResults>"
             f"<searchResultPostion>{query.position}</searchResultPostion>"
@@ -274,9 +458,41 @@ def _parse_time(value: str | None) -> datetime:
         raise UnsafePayloadError("NVR returned an invalid timestamp") from exc
 
 
+def _parse_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    return None
+
+
+def _parse_int(value: str | None, minimum: int, maximum: int) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if minimum <= parsed <= maximum else None
+
+
 def _assert_safe_locator(locator: str) -> None:
     parsed = urlsplit(locator)
     if parsed.scheme not in {"rtsp", "rtsps"} or not parsed.hostname:
         raise UnsafePayloadError("NVR returned an unsupported playback locator")
     if parsed.username is not None or parsed.password is not None:
         raise UnsafePayloadError("credential-bearing playback locators are not accepted")
+
+
+def _normalize_playback_locator(locator: str) -> str:
+    """Repair firmware that publishes RTSP locators on its HTTP service port."""
+    parsed = urlsplit(locator)
+    if parsed.scheme != "rtsp" or parsed.port not in {80, 443}:
+        return locator
+    host = parsed.hostname or ""
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return urlunsplit((parsed.scheme, f"{host}:554", parsed.path, parsed.query, parsed.fragment))

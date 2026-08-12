@@ -10,6 +10,7 @@ Documentation is part of the product contract. Planned and implemented behavior 
 - [Roadmap](product/roadmap.md): executable delivery slices and exit criteria.
 - [Validation](product/validation.md): evidence and metrics required before product claims.
 - [UX information architecture](product/ux-information-architecture.md): NVR-only and timeline-backed navigation.
+- [Event-to-trace strategy](product/event-to-trace-strategy.md): target-area mapping options, current decision and evidence boundaries.
 - [Market strategy](product/market-strategy.md): wedge, competition, moat and channel assumptions.
 - [Naming](product/naming.md): current working name and clearance status.
 

@@ -1,5 +1,26 @@
 import type { Bookmark } from "./types";
 
+export type NvrConnectionForm = {
+  name: string;
+  host: string;
+  username: string;
+  password: string;
+  http_port: number;
+  use_https: boolean;
+  verify_tls: boolean;
+};
+
+export function nvrProbePayload(form: NvrConnectionForm) {
+  return {
+    host: form.host,
+    username: form.username,
+    password: form.password,
+    http_port: form.http_port,
+    use_https: form.use_https,
+    verify_tls: form.verify_tls,
+  };
+}
+
 export function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
@@ -49,3 +70,10 @@ export function localInputToRfc3339(value: string): string {
   return parsed.toISOString();
 }
 
+export function dateToLocalInput(value: Date): string {
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return (
+    `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
+    + `T${pad(value.getHours())}:${pad(value.getMinutes())}`
+  );
+}

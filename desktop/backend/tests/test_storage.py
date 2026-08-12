@@ -28,6 +28,34 @@ def test_running_jobs_become_interrupted_on_restart(tmp_path: Path) -> None:
     assert row == {"state": "interrupted", "error_code": "JOB_INTERRUPTED"}
 
 
+def test_interrupted_clip_is_not_left_generating(tmp_path: Path) -> None:
+    database = Database(tmp_path / "tracecue.sqlite")
+    database.initialize(100)
+    database.execute(
+        "INSERT INTO jobs(id, kind, state, payload_json, attempts, created_ms, updated_ms) "
+        "VALUES ('job_1', 'clip', 'running', '{}', 1, 100, 100)"
+    )
+    database.execute(
+        "INSERT INTO nvrs(id, name, host, http_port, use_https, verify_tls, secret_ref, created_ms, updated_ms) "
+        "VALUES ('nvr_1', 'test', '192.0.2.1', 80, 0, 1, 'secret_1', 100, 100)"
+    )
+    database.execute(
+        "INSERT INTO nvr_channels(id, nvr_id, external_channel_id, metadata_json, device_name, "
+        "online, created_ms, updated_ms) VALUES "
+        "('channel_1', 'nvr_1', '1', '{}', 'Channel 1', 1, 100, 100)"
+    )
+    database.execute(
+        "INSERT INTO clips(id, job_id, nvr_channel_id, requested_start_ms, requested_end_ms, "
+        "status, created_ms, accessed_ms) VALUES "
+        "('clip_1', 'job_1', 'channel_1', 100, 200, 'generating', 100, 100)"
+    )
+
+    database.initialize(200)
+
+    row = database.one("SELECT status FROM clips WHERE id='clip_1'")
+    assert row == {"status": "failed"}
+
+
 @pytest.mark.skipif(os.name != "nt", reason="DPAPI is Windows-only")
 def test_dpapi_store_round_trips_without_plaintext(tmp_path: Path) -> None:
     path = tmp_path / "secrets.dpapi.json"
