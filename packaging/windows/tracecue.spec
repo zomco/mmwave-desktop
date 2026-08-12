@@ -26,6 +26,8 @@ analysis = Analysis(
     datas=[
         (str(ROOT / "desktop" / "frontend" / "dist"), "frontend"),
         (str(ROOT / "release" / "THIRD_PARTY_NOTICES.txt"), "."),
+        (str(ROOT / "packaging" / "windows" / "tools" / "COPYING.GPLv3"), "licenses"),
+        (str(ROOT / "packaging" / "windows" / "tools" / "COPYING.LGPLv3"), "licenses"),
     ],
     hiddenimports=hiddenimports,
     noarchive=False,

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Always-on timeline producer for TraceCue sensor deployments"
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "GPL-3.0-only" }
+license = { text = "MIT" }
 dependencies = ["tracecue-engine==0.1.0"]
 
 [project.optional-dependencies]
@@ -25,4 +25,3 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-

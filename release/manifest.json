@@ -1,15 +1,37 @@
 {
   "version": "0.1.0",
   "release_ready": false,
-  "license_decision": "blocked by unresolved ADR-0004",
-  "ffmpeg_version": null,
-  "ffmpeg_source_url": null,
-  "ffmpeg_sha256": null,
-  "ffprobe_sha256": null,
+  "project_license": "MIT",
+  "license_decision": "ADR-0004 accepted on 2026-08-12",
+  "ffmpeg_distribution": "BtbN/FFmpeg-Builds",
+  "ffmpeg_license": "LGPL-3.0-or-later",
+  "ffmpeg_version": "n8.1.2-34-g9b6c8969e0-20260731",
+  "ffmpeg_release_tag": "autobuild-2026-07-31-14-10",
+  "ffmpeg_archive_url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-lgpl-8.1.zip",
+  "ffmpeg_archive_sha256": "089e4169e93b2b3f3acbfced3c0704d24276a225641bdda04d796d28b07a2a38",
+  "ffmpeg_source_url": "https://github.com/FFmpeg/FFmpeg/archive/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b.tar.gz",
+  "ffmpeg_source_commit": "9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b",
+  "ffmpeg_source_sha256": "7e779215eae16ad7e93ddad59bd82822bd3d34e4dc61f9996f9481b2c0605bc3",
+  "ffmpeg_build_source_url": "https://github.com/BtbN/FFmpeg-Builds/archive/a99e8230eae00d1cee38f23076a7a1f55cd984e2.tar.gz",
+  "ffmpeg_build_source_commit": "a99e8230eae00d1cee38f23076a7a1f55cd984e2",
+  "ffmpeg_build_source_sha256": "7deac4a5190b2be84d4d548db2885d05152f9e3d77069d0e34841a46efd95e2b",
+  "ffmpeg_gpl_license_url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b/COPYING.GPLv3",
+  "ffmpeg_gpl_license_sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+  "ffmpeg_lgpl_license_url": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b/COPYING.LGPLv3",
+  "ffmpeg_lgpl_license_sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
+  "ffmpeg_sha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+  "ffprobe_sha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2",
+  "ffmpeg_h264_encoder": "libopenh264",
+  "release_blockers": [
+    "mirror and review the complete corresponding source and notices for the static dependency set",
+    "configure approved Windows code-signing credentials",
+    "complete signed-installer and authorized hardware compatibility tests"
+  ],
   "artifacts": [
     "TraceCue-0.1.0-win-x64.exe",
     "checksums.sha256",
-    "sbom.cdx.json"
+    "sbom.cdx.json",
+    "ffmpeg-9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b.tar.gz",
+    "ffmpeg-builds-a99e8230eae00d1cee38f23076a7a1f55cd984e2.tar.gz"
   ]
 }
-

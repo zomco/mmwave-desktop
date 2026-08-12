@@ -13,7 +13,7 @@
 - Node.js LTS，用于 Desktop SPA；
 - Windows 11 或受支持 Windows 10 环境，用于产品冒烟测试；
 - 硬件工作需专用测试 NVR，禁止将生产凭据写入 fixture。
-- 真实媒体测试需要 FFmpeg/FFprobe；仓库刻意不下载或提交二进制。
+- 真实媒体测试需要固定的 FFmpeg/FFprobe 输入；运行 `./packaging/windows/fetch-ffmpeg.ps1`。二进制保持忽略，绝不提交。
 
 ## 首次检出
 

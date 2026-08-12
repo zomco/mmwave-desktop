@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Loopback FastAPI control plane for TraceCue Desktop"
 readme = { text = "TraceCue Desktop loopback API and background-job service.", content-type = "text/plain" }
 requires-python = ">=3.12"
-license = { text = "GPL-3.0-only" }
+license = { text = "MIT" }
 dependencies = [
   "fastapi>=0.115,<1",
   "tracecue-engine==0.1.0",

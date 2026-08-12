@@ -14,9 +14,8 @@
 | pytest / httpx | Python 行为与 HTTP 集成测试 | MIT / BSD-3-Clause | 仅开发；生产代码不 import |
 | PyInstaller | Windows one-folder 组装 | GPL-2.0-or-later + bootloader 例外 | 仅打包且固定版本；每次发布复核当时例外与声明 |
 | Inno Setup | 按用户 Windows 安装器 | 自定义再分发条款 | 外部构建工具，不 vendoring；发布前所有者必须复核当时商业再分发条款 |
-| FFmpeg / FFprobe | 在不使用 Python 视频解码的前提下 remux/转码/探测 NVR 媒体 | 依构建而定的 LGPL/GPL | 不下载或 vendoring；发布门禁要求识别 LGPL 兼容构建、哈希、构建配置和精确声明/源码提供姿态 |
+| FFmpeg / FFprobe | 在不使用 Python 视频解码的前提下 remux/转码/探测 NVR 媒体 | 固定 BtbN 构建：LGPL-3.0-or-later；禁用 GPL/nonfree；OpenH264 的专利姿态仍需独立审查 | 已固定版本/源码/归档/可执行文件/许可证哈希和可复现构建脚本提交；二进制保持在 Git 外；发布仍受完整静态依赖源码/声明镜像和硬件证据门禁 |
 
 海康 HTTP Digest、XML 解析、SQLite 和 Gateway TCP 采集使用 Python 标准库，避免新增协议/运行时依赖。不受信任 XML 若包含 DTD/实体声明会被拒绝，并受深度/大小限制。
 
 Dependabot 覆盖 npm 和全部 Python 模块 manifest；CodeQL 覆盖可执行 Python 与 TypeScript。依赖更新必须同步精确 lock 并重新运行所有模块测试。
-

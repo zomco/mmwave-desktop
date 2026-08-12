@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 import sys
+import tomllib
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote
@@ -243,9 +244,73 @@ def check_security(errors: list[str]) -> None:
                 error(errors, f"possible {label} in {path.relative_to(ROOT)}")
 
 
+def check_license_and_release_metadata(errors: list[str]) -> None:
+    license_path = ROOT / "LICENSE"
+    if not license_path.exists() or not license_path.read_text(encoding="utf-8").startswith("MIT License\n"):
+        error(errors, "root LICENSE must contain the accepted MIT License")
+    for relative in (
+        "engine/pyproject.toml",
+        "gateway/pyproject.toml",
+        "integrations/hikvision/pyproject.toml",
+        "desktop/backend/pyproject.toml",
+    ):
+        path = ROOT / relative
+        try:
+            project = tomllib.loads(path.read_text(encoding="utf-8"))["project"]
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, KeyError) as exc:
+            error(errors, f"invalid package metadata {relative}: {exc}")
+            continue
+        license_value = project.get("license")
+        if license_value not in ("MIT", {"text": "MIT"}):
+            error(errors, f"package metadata must declare MIT: {relative}")
+
+    manifest_path = ROOT / "release/manifest.json"
+    manifest = load_json(manifest_path, errors)
+    if not isinstance(manifest, dict):
+        return
+    required = (
+        "version", "project_license", "license_decision", "ffmpeg_distribution",
+        "ffmpeg_license", "ffmpeg_version", "ffmpeg_release_tag", "ffmpeg_archive_url",
+        "ffmpeg_archive_sha256", "ffmpeg_source_url", "ffmpeg_source_commit",
+        "ffmpeg_source_sha256", "ffmpeg_build_source_url", "ffmpeg_build_source_commit",
+        "ffmpeg_build_source_sha256", "ffmpeg_gpl_license_url",
+        "ffmpeg_gpl_license_sha256", "ffmpeg_lgpl_license_url",
+        "ffmpeg_lgpl_license_sha256", "ffmpeg_sha256", "ffprobe_sha256",
+        "ffmpeg_h264_encoder", "release_blockers", "artifacts",
+    )
+    for key in required:
+        if not manifest.get(key):
+            error(errors, f"release manifest missing {key}")
+    if manifest.get("project_license") != "MIT":
+        error(errors, "release manifest project_license must be MIT")
+    if manifest.get("ffmpeg_license") != "LGPL-3.0-or-later":
+        error(errors, "release manifest must pin the selected LGPL-3.0-or-later FFmpeg build")
+    if manifest.get("ffmpeg_h264_encoder") != "libopenh264":
+        error(errors, "release manifest must match the packaged H.264 fallback encoder")
+    release_tag = manifest.get("ffmpeg_release_tag")
+    archive_url = manifest.get("ffmpeg_archive_url")
+    if release_tag == "latest" or (isinstance(archive_url, str) and "/latest/" in archive_url):
+        error(errors, "FFmpeg release metadata must not use a floating latest reference")
+    if isinstance(release_tag, str) and isinstance(archive_url, str) and release_tag not in archive_url:
+        error(errors, "FFmpeg archive URL must contain the pinned release tag")
+    for key in (
+        "ffmpeg_archive_sha256", "ffmpeg_source_sha256", "ffmpeg_build_source_sha256",
+        "ffmpeg_gpl_license_sha256", "ffmpeg_lgpl_license_sha256", "ffmpeg_sha256",
+        "ffprobe_sha256",
+    ):
+        value = manifest.get(key)
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            error(errors, f"release manifest {key} must be a lowercase SHA-256")
+    for key in ("ffmpeg_source_commit", "ffmpeg_build_source_commit"):
+        value = manifest.get(key)
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None:
+            error(errors, f"release manifest {key} must be a full commit SHA")
+
+
 def check_release_readiness(errors: list[str]) -> None:
     required = (
         "packaging/windows/build.ps1",
+        "packaging/windows/fetch-ffmpeg.ps1",
         "packaging/windows/smoke.ps1",
         "packaging/windows/tracecue.spec",
         "packaging/windows/TraceCue.iss",
@@ -262,16 +327,8 @@ def check_release_readiness(errors: list[str]) -> None:
         if isinstance(manifest, dict):
             if manifest.get("release_ready") is not True:
                 error(errors, "release manifest has not been approved (release_ready must be true)")
-            for key in (
-                "version",
-                "ffmpeg_version",
-                "ffmpeg_source_url",
-                "ffmpeg_sha256",
-                "ffprobe_sha256",
-                "artifacts",
-            ):
-                if not manifest.get(key):
-                    error(errors, f"release manifest missing {key}")
+            if manifest.get("release_blockers"):
+                error(errors, "release manifest still lists unresolved release_blockers")
 
 
 def main() -> int:
@@ -286,6 +343,7 @@ def main() -> int:
     check_markdown_links(errors)
     check_json_and_timeline(errors)
     check_text_hygiene(errors)
+    check_license_and_release_metadata(errors)
     if args.security:
         check_security(errors)
     if args.release:

@@ -30,7 +30,7 @@ TraceCue 运行时不依赖 `mmwave-component`、`mmwave-card`、`mmwave-fusion`
 - 常驻 Gateway 核心，包含有界 JSON-line 采集、时钟健康、穿越检测、持久化和导出；
 - Windows one-folder/安装器、签名、SBOM 和冒烟测试自动化，并设置显式发布门禁。
 
-本地与合成测试验证软件契约，但尚无海康型号/固件或雷达型号获得商业认证；仓库不包含 FFmpeg 二进制，二进制发布仍受 ADR-0004、签名材料和硬件证据阻塞。请查看[实现状态](docs/development/implementation-status_CN.md)、[路线图](docs/product/roadmap_CN.md)和[文档导航](docs/README_CN.md)。
+本地与合成测试验证软件契约，但尚无海康型号/固件或雷达型号获得商业认证；FFmpeg 二进制继续作为 Git 外的打包输入，二进制发布仍需完整第三方源码/声明、签名材料和硬件证据。请查看[实现状态](docs/development/implementation-status_CN.md)、[路线图](docs/product/roadmap_CN.md)和[文档导航](docs/README_CN.md)。
 
 ## 从这里开始
 
@@ -43,4 +43,4 @@ TraceCue 运行时不依赖 `mmwave-component`、`mmwave-card`、`mmwave-fusion`
 
 ## 许可证提示
 
-仓库创建时选择了 GPL-3.0，但拟议中的商业/开源边界尚未与该许可证选择完成协调。在 [ADR-0004](docs/architecture/decisions/0004-licensing-before-contributions_CN.md) 解决前，不要接受外部代码贡献，也不要向产品模块复制第三方代码。
+TraceCue 代码使用 [MIT License](LICENSE)。[ADR-0004](docs/architecture/decisions/0004-licensing-before-contributions_CN.md) 记录了所有者决策和贡献姿态。随包第三方程序和库继续适用各自许可证与声明。

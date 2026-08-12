@@ -31,12 +31,26 @@ Sign the application launcher, installer, uninstaller and future updater with a 
 
 ## FFmpeg distribution
 
-- Pin version, source URL and SHA-256.
+- Pin version, immutable release URL, source commits and SHA-256.
 - Record `ffmpeg -version` and `-buildconf` in release provenance.
 - Prefer a verifiable LGPL build and ship required license/source-offer notices.
 - Do not use `nonfree`; review any GPL-enabled build against the resolved product license.
 - Distribute `ffprobe` with `ffmpeg`.
 - Treat codec patent/licensing questions separately from LGPL/GPL compliance.
+
+### Pinned 0.1.0 input
+
+TraceCue pins BtbN's monthly-retained Windows x64 static LGPL build `n8.1.2-34-g9b6c8969e0-20260731` from release tag `autobuild-2026-07-31-14-10`. FFmpeg's download page lists BtbN as a Windows binary provider. The archive, executables, FFmpeg source commit `9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b`, BtbN build-script commit `a99e8230eae00d1cee38f23076a7a1f55cd984e2`, license texts and all SHA-256 values are recorded in `release/manifest.json`.
+
+The build enables `--enable-version3` and `--enable-libopenh264`, while `--enable-gpl`, `--enable-nonfree`, `libx264` and `libx265` are absent/disabled. TraceCue therefore uses `libopenh264` for the compatibility transcode fallback. Codec patent review remains a separate product-release decision.
+
+Fetch and verify packaging inputs without committing binaries:
+
+```powershell
+./packaging/windows/fetch-ffmpeg.ps1 -IncludeSourceSnapshots
+```
+
+The script verifies the archive and per-executable hashes, version/build configuration, required LGPL/GPL texts and optional source snapshots. It writes binaries to the ignored `packaging/windows/tools/` directory and source snapshots to ignored `release/output/source/`.
 
 ## Media policy
 
@@ -57,4 +71,4 @@ Every binary release includes application version, database migration version, F
 - `packaging/windows/build.ps1 -Mode Verify` runs repository/security, Python module and frontend checks.
 - `-Mode Release` builds a PyInstaller one-folder application, signs it, creates a per-user Inno Setup installer, generates a CycloneDX SBOM and checksums, and refuses to proceed without explicit inputs.
 - `packaging/windows/smoke.ps1` launches the packaged process hidden, verifies loopback status and SQLite initialization, then removes its isolated temporary data.
-- `release/manifest.json` currently has `release_ready=false`. It must remain false until ADR-0004 is resolved, an LGPL-compatible FFmpeg build and hashes/notices are recorded, and signing credentials are approved.
+- ADR-0004 and FFmpeg selection are resolved. `release/manifest.json` remains `release_ready=false` until the complete corresponding-source/notices set for all statically incorporated dependencies is mirrored and reviewed, signing credentials are approved, and signed-installer/hardware tests pass.

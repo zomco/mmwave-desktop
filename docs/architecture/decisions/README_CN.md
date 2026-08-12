@@ -7,7 +7,7 @@
 | [0001](0001-monorepo-first_CN.md) | 已接受 | 前期将 desktop、gateway 和 engine 保持在单仓 |
 | [0002](0002-local-web-desktop_CN.md) | 已接受 | 主桌面形态使用只监听回环地址的本地 Web 应用 |
 | [0003](0003-nvr-authoritative-media_CN.md) | 已接受 | NVR 保持为权威媒体存储 |
-| [0004](0004-licensing-before-contributions_CN.md) | 待决/阻断 | 外部代码贡献前解决 GPL 与商业边界 |
+| [0004](0004-licensing-before-contributions_CN.md) | 已接受 | 整个单仓采用 MIT，并独立履行第三方许可证义务 |
 | [0005](0005-initial-implementation-stack_CN.md) | 待决 | 采用初始 Python/FastAPI、React/TypeScript 与 FFmpeg 技术栈 |
 
 ADR 使用不可变编号。若要改变已接受结论，应新增 ADR 取代，而不是静默改写原结论。

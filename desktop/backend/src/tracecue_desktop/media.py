@@ -14,6 +14,15 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from .errors import MediaError
 
 
+H264_COMPATIBILITY_ARGS = (
+    "-c:v", "libopenh264",
+    "-b:v", "4M",
+    "-maxrate", "6M",
+    "-bufsize", "8M",
+    "-pix_fmt", "yuv420p",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class MediaResult:
     path: Path
@@ -122,7 +131,7 @@ class FFmpegRunner:
         if self._run(copy_command, cancel_requested):
             return
         transcode_command = common + [
-            "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+            "-map", "0:v:0", "-map", "0:a?", *H264_COMPATIBILITY_ARGS,
         ] + audio_args + ["-movflags", "+faststart", "-f", "mp4", str(output)]
         if not self._run(transcode_command, cancel_requested):
             raise MediaError("MEDIA_CODEC_UNSUPPORTED", "The recording could not be remuxed or transcoded.", 422)

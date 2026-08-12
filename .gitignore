@@ -26,6 +26,7 @@ clips/
 # Packaging and local artifacts
 artifacts/
 release/output/
+packaging/windows/tools/
 *.msi
 *.msix
 

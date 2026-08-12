@@ -20,7 +20,7 @@ The repository baseline defines TraceCue as one product family with Desktop, Gat
 
 ### Blocking decision
 
-GPL-3.0 currently applies. ADR-0004 must be resolved before external code contributions or a public binary.
+MIT applies to TraceCue code under accepted ADR-0004. Public binaries must still satisfy the pinned FFmpeg LGPL/source/notices posture and every other third-party obligation.
 
 ### Next smallest executable task
 

@@ -2,7 +2,7 @@
 
 [中文](CONTRIBUTING_CN.md)
 
-TraceCue is currently owner-led. The repository welcomes design discussion and reproducible hardware findings, but external code contributions are paused until the licensing decision in ADR-0004 is resolved.
+TraceCue is owner-led and welcomes focused code contributions, design discussion and reproducible hardware findings. TraceCue code is licensed under MIT; by submitting a contribution, the contributor agrees that it is provided under the repository's MIT License and confirms they have the right to submit it. No contributor license agreement is currently required.
 
 ## Before opening work
 

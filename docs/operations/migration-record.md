@@ -27,7 +27,7 @@ From this migration onward, TraceCue product decisions belong in this repository
 
 ## Follow-up
 
-Resolve ADR-0004 licensing before accepting external code, then begin M1. If new historical notes conflict with accepted ADRs, create a superseding ADR rather than silently merging assumptions.
+ADR-0004 was accepted on 2026-08-12 and the monorepo now uses MIT. If new historical notes conflict with accepted ADRs, create a superseding ADR rather than silently merging assumptions.
 
 ## Implementation migration 0.1.0
 

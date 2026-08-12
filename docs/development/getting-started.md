@@ -13,7 +13,7 @@ The repository contains an executable 0.1.0 development baseline. Software contr
 - Node.js LTS only after `desktop/package.json` exists.
 - Windows 11 or a supported Windows 10 environment for product smoke tests.
 - Access to a dedicated test NVR for hardware work; never use production credentials in fixtures.
-- FFmpeg/FFprobe for real media tests; the repository deliberately does not download or check in binaries.
+- The pinned FFmpeg/FFprobe input for real media tests; run `./packaging/windows/fetch-ffmpeg.ps1`. Binaries remain ignored and are never committed.
 
 ## First checkout
 

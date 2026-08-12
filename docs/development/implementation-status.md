@@ -14,8 +14,8 @@ Before this implementation, the repository contained M0 documentation, contracts
 | --- | --- | --- | --- |
 | M0 contracts | Complete | repository and security verifier | Complete |
 | M1 Hikvision probe | Implemented | synthetic device/time/channel/search fixtures; auth/size/XML/pagination failure tests | Blocked on two authorized NVR model/firmware evidence records |
-| M2 H.264 clip | Implemented | persistent jobs, resolver, FFmpeg argument arrays, `.partial`/FFprobe/atomic path, Range tests with fake media | Blocked on pinned FFmpeg distribution and real H.264 NVR P95 result |
-| M3 distributable foundation | Substantially implemented | multi-channel/aliases, H.265 fallback, quota, diagnostics/status, one-folder/installer/sign/SBOM/smoke scripts | Blocked on ADR-0004, FFmpeg hashes/notices, certificate, built installer and unfamiliar-user test |
+| M2 H.264 clip | Implemented | persistent jobs, resolver, FFmpeg argument arrays, `.partial`/FFprobe/atomic path, Range tests and pinned `libopenh264` smoke | Blocked on real H.264 NVR P95 result |
+| M3 distributable foundation | Substantially implemented | MIT decision; pinned FFmpeg binary/source hashes; multi-channel/aliases, H.265 fallback, quota, diagnostics/status, one-folder/installer/sign/SBOM/smoke scripts | Blocked on complete static-dependency source/notices review, certificate, built installer and unfamiliar-user test |
 | M4 timeline path | Implemented | strict inspect/commit/hash/idempotency, mapping/correction, quality/source UI, comparison guardrail tests | Blocked on a cleared labelled golden dataset and measured recall/precision/find-time |
 | M5 gateway | Core implemented | bounded experimental input, reconnect, clock health, track quality, SQLite durability, export tests while Desktop is offline | Blocked on selecting/certifying one physical radar model and unattended deployment evidence |
 
@@ -30,14 +30,12 @@ Before this implementation, the repository contained M0 documentation, contracts
 
 ## External evidence still required
 
-1. The owner must decide the repository/product license and supersede ADR-0004 before publishing a binary.
-2. Select a verifiable LGPL FFmpeg/FFprobe build, record source/version/hashes and exact notices, then place tools only in the packaging input outside Git history if redistribution terms permit.
-3. Run the compatibility procedure on two authorized Hikvision model/firmware combinations, save redacted fixtures/evidence and measure H.264/H.265/audio outcomes.
-4. Select one legally/protocol-reviewed radar adapter, capture synthetic/redacted fixtures and run an unattended clock/reconnect/offline-retention scenario.
-5. Run the signed installer smoke test and an unfamiliar-user install-to-playback session.
-6. Create or obtain a cleared labelled dataset before reporting precision, recall or review-volume improvement.
+1. Mirror and review the complete corresponding source and notices for the pinned BtbN static LGPL dependency set; the FFmpeg and build-script snapshots are already pinned.
+2. Run the compatibility procedure on two authorized Hikvision model/firmware combinations, save redacted fixtures/evidence and measure H.264/H.265/audio outcomes.
+3. Select one legally/protocol-reviewed radar adapter, capture synthetic/redacted fixtures and run an unattended clock/reconnect/offline-retention scenario.
+4. Configure approved signing credentials, then run the signed installer smoke test and an unfamiliar-user install-to-playback session.
+5. Create or obtain a cleared labelled dataset before reporting precision, recall or review-volume improvement.
 
 ## Next smallest executable step
 
-Resolve ADR-0004, then run the read-only probe against the first owner-controlled Hikvision NVR and commit its redacted compatibility evidence. That result determines whether media and packaging hardware gates can proceed without redesign.
-
+Run `packaging/windows/fetch-ffmpeg.ps1 -IncludeSourceSnapshots`, review the resulting build configuration/source inputs, then run the read-only probe against the first owner-controlled Hikvision NVR and commit its redacted compatibility evidence.

@@ -14,6 +14,19 @@ Vitest - MIT License - https://github.com/vitest-dev/vitest
 PyInstaller - GPL-2.0-or-later with an exception permitting distribution of bundled applications - https://pyinstaller.org/
 Inno Setup - custom redistribution license; review current terms before release - https://jrsoftware.org/isinfo.php
 
-FFmpeg/FFprobe are not checked into this repository. Release remains blocked until the
-owner selects a pinned, verifiable LGPL-compatible build, records its source URL and
-SHA-256 hashes in release/manifest.json, and includes its exact license/source-offer notices.
+FFmpeg and FFprobe - LGPL-3.0-or-later for the selected build - https://ffmpeg.org/
+Binary provider: BtbN/FFmpeg-Builds - MIT build scripts - https://github.com/BtbN/FFmpeg-Builds
+Pinned binary: n8.1.2-34-g9b6c8969e0-20260731, win64-lgpl-8.1, release
+autobuild-2026-07-31-14-10. The build enables version3 and libopenh264; it does not
+enable GPL or nonfree mode and disables libx264/libx265. Full archive, executable,
+source, build-script and license hashes are recorded in release/manifest.json.
+
+The packaged application invokes FFmpeg/FFprobe as separate subprocesses. Copies of
+COPYING.GPLv3 and COPYING.LGPLv3 accompany the binaries. Exact FFmpeg source and the
+reproducible BtbN build-script snapshot must be published beside every binary release.
+The release gate remains closed until the complete corresponding-source and notice set
+for every statically incorporated dependency is mirrored and reviewed.
+
+The selected build contains OpenH264 under its upstream BSD-2-Clause software license.
+Codec patent/licensing review is separate from copyright-license compliance and remains
+a product-release responsibility.

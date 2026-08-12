@@ -18,7 +18,7 @@ TraceCue may port algorithms with provenance and license review, consume exporte
 
 ## Open-source boundary
 
-The previously proposed boundary was a potentially open `engine` and closed product integration. The current repository, however, is GPL-3.0. Until ADR-0004 is resolved, this repository's actual license controls and external code contributions remain paused.
+ADR-0004 licenses the complete monorepo under MIT. `desktop`, `gateway`, `engine` and integrations therefore share one permissive code license while retaining explicit runtime and data interfaces. Third-party licenses, including FFmpeg's build-dependent LGPL/GPL terms, remain separate distribution obligations.
 
 ## Deployment boundary
 

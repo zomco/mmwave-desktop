@@ -30,7 +30,7 @@ The repository now contains an executable `0.1.0` development baseline:
 - an always-on Gateway core with bounded JSON-line acquisition, clock health, traverse detection, persistence and export;
 - Windows one-folder/installer, signing, SBOM and smoke-test automation with an explicit release gate.
 
-Local and synthetic tests validate the software contracts. No Hikvision model/firmware or radar model is yet commercially certified, the repository does not contain FFmpeg binaries, and binary publication remains blocked by ADR-0004, signing material and hardware evidence. See the [implementation status](docs/development/implementation-status.md), [roadmap](docs/product/roadmap.md) and [documentation map](docs/README.md).
+Local and synthetic tests validate the software contracts. No Hikvision model/firmware or radar model is yet commercially certified, FFmpeg binaries remain packaging inputs outside Git, and binary publication still requires complete third-party source/notices, signing material and hardware evidence. See the [implementation status](docs/development/implementation-status.md), [roadmap](docs/product/roadmap.md) and [documentation map](docs/README.md).
 
 ## Start here
 
@@ -43,4 +43,4 @@ Local and synthetic tests validate the software contracts. No Hikvision model/fi
 
 ## License notice
 
-The repository was initialized with GPL-3.0. The intended commercial/open-source boundary has not yet been reconciled with that choice. Do not accept external code contributions or copy third-party code into product modules until [ADR-0004](docs/architecture/decisions/0004-licensing-before-contributions.md) is resolved.
+TraceCue code is licensed under the [MIT License](LICENSE). [ADR-0004](docs/architecture/decisions/0004-licensing-before-contributions.md) records the owner decision and contribution posture. Bundled third-party programs and libraries retain their own licenses and notices.

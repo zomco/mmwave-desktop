@@ -6,6 +6,9 @@
 
 ## 未发布
 
+- 接受 ADR-0004，并将单仓及包元数据统一为 MIT License。
+- 固定按月保留的 BtbN FFmpeg 8.1 LGPLv3 Windows 构建、二进制/源码/许可证哈希及可复现获取校验。
+- 将仅 GPL 构建提供的 `libx264` 转码回退替换为固定构建中已验证的 `libopenh264` 编码器。
 - 建立单仓产品、架构、契约、AI 协作与 CI/CD 文档基线。
 - 实现 Engine 时间轴核心和严格的 `timeline.v1` 校验。
 - 实现具有输入边界和 fixture 测试的海康 ISAPI/RTSP 适配层。

@@ -1,8 +1,8 @@
-# ADR-0004: Resolve licensing before external code contributions
+# ADR-0004: License the TraceCue monorepo under MIT
 
 [中文](0004-licensing-before-contributions_CN.md)
 
-- Status: Proposed / blocking external code contributions
+- Status: Accepted
 - Date: 2026-08-12
 
 ## Context
@@ -16,10 +16,16 @@ The repository was initialized under GPL-3.0. Earlier product planning suggested
 3. Use owner-controlled dual licensing with an explicit contributor agreement.
 4. Keep the repository private/proprietary and publish selected components later.
 
-## Temporary decision
+## Decision
 
-Preserve the existing `LICENSE`; do not imply a different license. Pause external code contributions and third-party code copying until the owner chooses a model with appropriate legal advice. Documentation and issue discussion may continue.
+The owner relicensed the complete TraceCue monorepo, including `desktop`, `gateway`, `engine` and integrations, under the MIT License. Package metadata must declare `MIT`. Unless a future accepted ADR introduces a different module boundary, external contributions are submitted under the same MIT terms; no contributor license agreement or dual-license grant is required by this decision.
 
-## Resolution requirements
+Third-party components retain their own licenses. In particular, bundling FFmpeg does not change TraceCue's MIT license and does not remove FFmpeg's LGPL obligations. Each binary release must preserve exact third-party notices, license texts, provenance and corresponding-source access.
 
-Record chosen licenses per module, contribution terms, FFmpeg distribution posture, third-party notices and migration steps. Replace this ADR with an accepted superseding decision before the first external code contribution or public binary.
+## Consequences
+
+- The repository root `LICENSE` is the source of truth for TraceCue code.
+- Package manifests, contribution guidance and release metadata must stay aligned with MIT.
+- External contributions are no longer blocked by this ADR, but still require normal review, authorship rights and license/security checks.
+- A proprietary or dual-licensed module would require an explicit superseding ADR and a clean ownership record.
+- FFmpeg and other third-party distribution obligations remain independent release gates.
