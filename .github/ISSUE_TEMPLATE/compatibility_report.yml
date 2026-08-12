@@ -1,0 +1,41 @@
+name: NVR compatibility report / NVR 兼容报告
+description: Submit redacted model/firmware evidence / 提交脱敏型号/固件证据
+title: "[Compatibility] "
+labels: [compatibility, hardware, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: Never upload credentials, serial numbers, public addresses, customer images or raw playback URLs. / 禁止上传凭据、序列号、公网地址、客户图片或原始回放 URL。
+  - type: input
+    id: model
+    attributes:
+      label: Model / 型号
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware / 固件
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Probe/search/export results / 探测、检索、导出结果
+    validations:
+      required: true
+  - type: textarea
+    id: codecs
+    attributes:
+      label: Video/audio codecs and media result / 视频、音频编码及媒体结果
+  - type: textarea
+    id: failures
+    attributes:
+      label: Reproducible failures / 可复现失败
+  - type: checkboxes
+    id: authorization
+    attributes:
+      label: Authorization and redaction / 授权与脱敏
+      options:
+        - label: I was authorized to test this device and removed sensitive data. / 我获授权测试该设备，并已删除敏感数据。
+          required: true

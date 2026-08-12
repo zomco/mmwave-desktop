@@ -1,0 +1,58 @@
+{
+  "schema_version": "timeline.v1",
+  "document_id": "export-20260812-001",
+  "source_id": "site-gateway-7f2c",
+  "generated_at": "2026-08-12T08:30:00Z",
+  "producer": {
+    "name": "tracecue-gateway",
+    "version": "0.1.0"
+  },
+  "coverage": {
+    "start_at": "2026-08-11T16:00:00Z",
+    "end_at": "2026-08-12T16:00:00Z",
+    "completeness": "complete"
+  },
+  "channels": [
+    {
+      "id": "radar-hall-east",
+      "label": "East hallway radar",
+      "kind": "mmwave",
+      "external_refs": [
+        {
+          "namespace": "mmwave_fusion",
+          "value": "hall_east"
+        }
+      ]
+    }
+  ],
+  "intervals": [
+    {
+      "id": "traverse-20260812-00127",
+      "channel_id": "radar-hall-east",
+      "event_type": "presence.traverse",
+      "start_at": "2026-08-12T08:12:03.240Z",
+      "end_at": "2026-08-12T08:12:09.810Z",
+      "quality": {
+        "score": 0.93,
+        "gate": "pass",
+        "reasons": ["track_continuity", "valid_zone_crossing"]
+      },
+      "confidence": 0.96,
+      "media_window": {
+        "start_at": "2026-08-12T08:11:58.240Z",
+        "end_at": "2026-08-12T08:12:19.810Z"
+      },
+      "tags": ["person_related"],
+      "source_ref": {
+        "event_id": "fusion-event-18271",
+        "track_id": "track-932"
+      },
+      "attributes": {
+        "mmwave_fusion": {
+          "direction": "east_to_west",
+          "track_count": 1
+        }
+      }
+    }
+  ]
+}

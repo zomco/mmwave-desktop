@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+coverage/
+frontend-dist/
+
+# TraceCue runtime data
+data/
+clips/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.partial
+
+# Packaging and local artifacts
+artifacts/
+release/
+*.msi
+*.msix
+
+# IDE / OS
+.idea/
+.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.pem
+secrets/

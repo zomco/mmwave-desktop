@@ -1,0 +1,31 @@
+name: Feature proposal / 功能提案
+description: Propose an outcome while preserving product boundaries / 在遵守产品边界的前提下提出结果
+title: "[Proposal] "
+labels: [proposal, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem / 用户问题
+      description: Describe the workflow cost, not only a desired implementation. / 描述工作流成本，而不只是想要的实现。
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome and evidence / 期望结果与证据
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Boundary and trade-off impact / 边界与取舍影响
+      description: NVR authority, local-first, HA independence, maintenance and security. / 考虑 NVR 权威、本地优先、HA 解耦、维护和安全。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria / 验收标准
+    validations:
+      required: true

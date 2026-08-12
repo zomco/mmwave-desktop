@@ -1,0 +1,51 @@
+name: Bug report / 缺陷报告
+description: Reproducible TraceCue behavior that differs from its contract / 可复现且偏离契约的行为
+title: "[Bug] "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, customer footage or unredacted NVR responses. / 禁止包含凭据、客户录像或未脱敏 NVR 响应。
+  - type: dropdown
+    id: module
+    attributes:
+      label: Module / 模块
+      options: [Desktop, Gateway, Engine, Hikvision integration, Packaging/CI, Documentation]
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior / 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction / 复现步骤
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TraceCue version or commit / TraceCue 版本或提交
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Redacted device model/firmware / 脱敏设备型号与固件
+      description: Required for hardware-specific issues. / 硬件问题必填。
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data safety / 数据安全
+      options:
+        - label: I removed credentials and customer data. / 我已删除凭据和客户数据。
+          required: true

@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-modules:
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.detect.outputs.engine }}
+      gateway: ${{ steps.detect.outputs.gateway }}
+      desktop_backend: ${{ steps.detect.outputs.desktop_backend }}
+      desktop_frontend: ${{ steps.detect.outputs.desktop_frontend }}
+      windows: ${{ steps.detect.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        name: Detect implemented module manifests
+        shell: bash
+        run: |
+          [[ -f engine/pyproject.toml ]] && echo "engine=true" >> "$GITHUB_OUTPUT" || echo "engine=false" >> "$GITHUB_OUTPUT"
+          [[ -f gateway/pyproject.toml ]] && echo "gateway=true" >> "$GITHUB_OUTPUT" || echo "gateway=false" >> "$GITHUB_OUTPUT"
+          [[ -f desktop/backend/pyproject.toml ]] && echo "desktop_backend=true" >> "$GITHUB_OUTPUT" || echo "desktop_backend=false" >> "$GITHUB_OUTPUT"
+          [[ -f desktop/frontend/package-lock.json ]] && echo "desktop_frontend=true" >> "$GITHUB_OUTPUT" || echo "desktop_frontend=false" >> "$GITHUB_OUTPUT"
+          [[ -f packaging/windows/build.ps1 ]] && echo "windows=true" >> "$GITHUB_OUTPUT" || echo "windows=false" >> "$GITHUB_OUTPUT"
+
+  repository-contract:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify repository contracts
+        run: python scripts/ci/verify_repo.py
+
+  engine:
+    needs: [repository-contract, detect-modules]
+    if: ${{ needs.detect-modules.outputs.engine == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: engine/pyproject.toml
+      - run: python -m pip install -e "./engine[dev]"
+      - run: python -m pytest engine/tests
+
+  gateway:
+    needs: [repository-contract, detect-modules]
+    if: ${{ needs.detect-modules.outputs.gateway == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: gateway/pyproject.toml
+      - run: python -m pip install -e "./gateway[dev]"
+      - run: python -m pytest gateway/tests
+
+  desktop-backend:
+    needs: [repository-contract, detect-modules]
+    if: ${{ needs.detect-modules.outputs.desktop_backend == 'true' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: desktop/backend/pyproject.toml
+      - run: python -m pip install -e "./desktop/backend[dev]"
+      - run: python -m pytest desktop/backend/tests
+
+  desktop-frontend:
+    needs: [repository-contract, detect-modules]
+    if: ${{ needs.detect-modules.outputs.desktop_frontend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+      - run: npm ci --prefix desktop/frontend
+      - run: npm test --prefix desktop/frontend -- --run
+      - run: npm run build --prefix desktop/frontend
+
+  windows-smoke:
+    needs: [repository-contract, detect-modules]
+    if: ${{ needs.detect-modules.outputs.windows == 'true' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Windows package
+        shell: pwsh
+        run: ./packaging/windows/build.ps1 -Mode Verify
+
+  quality-gate:
+    if: ${{ always() }}
+    needs: [detect-modules, repository-contract, engine, gateway, desktop-backend, desktop-frontend, windows-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail on any failed or cancelled dependency
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
+      - name: Quality gate passed
+        run: echo "All applicable TraceCue checks passed."
