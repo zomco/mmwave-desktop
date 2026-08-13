@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+
+EventType = Literal["motion", "video_tamper", "line_crossing", "region_intrusion"]
 
 
 class ApiModel(BaseModel):
@@ -41,9 +46,11 @@ class SearchRequest(ApiModel):
     channel_ids: list[str]
     from_at: str = Field(alias="from")
     to_at: str = Field(alias="to")
-    source_modes: list[str] = Field(default_factory=lambda: ["record_classification"])
+    source_modes: list[Literal["historical_event_log", "record_classification"]] = Field(
+        default_factory=lambda: ["historical_event_log"], max_length=1
+    )
     area_name: str | None = Field(default=None, max_length=200)
-    event_types: list[str] = Field(default_factory=list, max_length=32)
+    event_types: list[EventType] = Field(default_factory=list, max_length=4)
     preset_id: str | None = None
 
 
@@ -52,7 +59,23 @@ class SearchPresetRequest(ApiModel):
     nvr_id: str | None = None
     area_name: str = Field(default="", max_length=200)
     channel_ids: list[str] = Field(min_length=1, max_length=64)
-    event_types: list[str] = Field(default_factory=list, max_length=32)
+    event_types: list[EventType] = Field(default_factory=list, max_length=4)
+
+
+class TraceSessionRequest(ApiModel):
+    channel_ids: list[str] = Field(min_length=1, max_length=64)
+    event_types: list[EventType] = Field(default_factory=list, max_length=4)
+    preset_id: str | None = None
+
+
+class TraceIterationRequest(ApiModel):
+    from_at: str = Field(alias="from")
+    to_at: str = Field(alias="to")
+    label: str = Field(default="自定义时间", min_length=1, max_length=100)
+
+
+class TraceReviewRequest(ApiModel):
+    state: str = Field(pattern="^(unreviewed|reviewed|excluded|candidate)$")
 
 
 class DiscoveryRequest(ApiModel):
@@ -80,6 +103,8 @@ class SettingsPatchRequest(ApiModel):
     pre_roll_ms: int | None = Field(default=None, ge=0, le=3_600_000)
     post_roll_ms: int | None = Field(default=None, ge=0, le=3_600_000)
     preferred_port: int | None = Field(default=None, ge=1024, le=65535)
+    night_start_hour: int | None = Field(default=None, ge=0, le=23)
+    night_end_hour: int | None = Field(default=None, ge=0, le=23)
 
 
 class CommitImportRequest(ApiModel):

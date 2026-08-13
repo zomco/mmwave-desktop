@@ -21,7 +21,7 @@ def test_status_reports_schema_and_media_without_paths(services) -> None:
     response = client(services).get("/api/v1/status")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == 4
+    assert payload["schema_version"] == 5
     assert payload["bind_host"] == "127.0.0.1"
     assert "data_dir" not in json.dumps(payload)
 
@@ -98,11 +98,11 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert ready["status"] == "ready"
     assert ready["origin"]["bookmark_id"] == bookmarks[0]["id"]
     assert ready["origin"]["search_job_id"] == search.json()["id"]
-    assert ready["origin"]["classification"] == "motion"
-    assert ready["origin"]["candidate_window_capped"] is True
+    assert ready["origin"]["classification"] == "log.hikvision.com/Alarm/motionStart/1"
+    assert ready["origin"]["candidate_window_capped"] is False
     assert ready["requested_window"] == {
         "start_at": "2026-08-12T08:00:00.000Z",
-        "end_at": "2026-08-12T08:00:05.000Z",
+        "end_at": "2026-08-12T08:00:01.000Z",
     }
 
     ranged = api.get(ready["content_url"], headers={"Range": "bytes=10-19"})
@@ -149,6 +149,110 @@ def test_device_discovery_event_audit_and_saved_area_filter(services, nvr) -> No
     assert preset.status_code == 201
     assert api.get("/api/v1/search-presets").json()[0]["area_name"] == "Front entrance"
     assert api.delete(f"/api/v1/search-presets/{preset.json()['id']}").status_code == 204
+
+
+def test_continuous_and_catch_all_smart_are_not_event_filters(services, nvr) -> None:
+    api = client(services)
+    channel = api.get(f"/api/v1/nvrs/{nvr['id']}/channels").json()[0]
+    for event_type in ("continuous", "smart"):
+        response = api.post(
+            "/api/v1/trace-sessions",
+            json={"channel_ids": [channel["id"]], "event_types": [event_type]},
+        )
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "REQUEST_VALIDATION_FAILED"
+
+
+def test_trace_session_accumulates_iterations_deduplicates_and_persists_reviews(
+    services, nvr
+) -> None:
+    api = client(services)
+    channel = api.get(f"/api/v1/nvrs/{nvr['id']}/channels").json()[0]
+    session_response = api.post(
+        "/api/v1/trace-sessions",
+        json={"channel_ids": [channel["id"]], "event_types": ["motion"]},
+    )
+    assert session_response.status_code == 201
+    session_id = session_response.json()["id"]
+
+    first = api.post(
+        f"/api/v1/trace-sessions/{session_id}/iterations",
+        json={
+            "from": "2026-08-12T08:00:00Z",
+            "to": "2026-08-12T08:01:00Z",
+            "label": "昨晚",
+        },
+    )
+    assert first.status_code == 202
+    assert services.worker.process_once()
+
+    second = api.post(
+        f"/api/v1/trace-sessions/{session_id}/iterations",
+        json={
+            "from": "2026-08-11T08:00:00Z",
+            "to": "2026-08-11T08:01:00Z",
+            "label": "前一晚",
+        },
+    )
+    assert second.status_code == 202
+    assert services.worker.process_once()
+    restored = api.get(f"/api/v1/trace-sessions/{session_id}").json()
+    assert len(restored["iterations"]) == 2
+    assert restored["result_count"] == 1
+    assert api.get("/api/v1/trace-sessions?limit=1").json()[0]["id"] == session_id
+
+    results = api.get(f"/api/v1/trace-sessions/{session_id}/results").json()
+    assert results["total"] == 1
+    assert results["counts"]["unreviewed"] == 1
+    assert results["items"][0]["review_state"] == "unreviewed"
+    assert results["density"]
+    bookmark_id = results["items"][0]["id"]
+
+    focused = api.get(
+        f"/api/v1/trace-sessions/{session_id}/results",
+        params={"from": results["density"][0]["start_at"], "to": "2026-08-12T09:00:00Z"},
+    )
+    assert focused.status_code == 200
+    assert focused.json()["total"] == 1
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results",
+        params={"from": "2026-08-12T09:00:00Z", "to": "2026-08-12T10:00:00Z"},
+    ).json()["total"] == 0
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results",
+        params={"from": "2026-08-12T08:00:00Z"},
+    ).status_code == 422
+
+    focused = api.get(
+        f"/api/v1/trace-sessions/{session_id}/results",
+        params={"from": results["density"][0]["start_at"], "to": "2026-08-12T09:00:00Z"},
+    )
+    assert focused.status_code == 200
+    assert focused.json()["total"] == 1
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results",
+        params={"from": "2026-08-12T09:00:00Z", "to": "2026-08-12T10:00:00Z"},
+    ).json()["total"] == 0
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results",
+        params={"from": "2026-08-12T08:00:00Z"},
+    ).status_code == 422
+
+    reviewed = api.patch(
+        f"/api/v1/trace-sessions/{session_id}/events/{bookmark_id}",
+        json={"state": "excluded"},
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.json()["state"] == "excluded"
+    assert api.get(f"/api/v1/trace-sessions/{session_id}/results").json()["total"] == 0
+    excluded = api.get(
+        f"/api/v1/trace-sessions/{session_id}/results?review_state=excluded"
+    ).json()
+    assert excluded["total"] == 1
+    assert excluded["items"][0]["review_state"] == "excluded"
+
+    assert api.delete(f"/api/v1/trace-sessions/{session_id}").status_code == 204
+    assert api.get(f"/api/v1/trace-sessions/{session_id}").status_code == 404
 
 
 def test_delete_nvr_removes_local_credentials_and_indexed_sources(services, nvr) -> None:

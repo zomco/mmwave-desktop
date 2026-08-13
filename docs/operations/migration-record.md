@@ -35,6 +35,10 @@ Executable code now initializes Desktop SQLite schema version 1 on first start. 
 
 Gateway owns a separate internal SQLite store for its always-on intervals and bounded diagnostics. Desktop never reads that database; data crosses via `timeline.v1`.
 
-### Desktop schema v2-v4
+### Desktop schema v2-v5
 
 Schema v2 added search presets/results, read-only NVR event-audit evidence, event JPEG previews and clip origin. Schema v3 adds the observed NVR UTC offset, multi-NVR camera scope for saved filters, expiring channel snapshots and cached event WebP animations. Existing presets retain their original camera list, existing interval/clip UTC timestamps do not change, and existing NVR rows fall back to parsing their stored POSIX timezone until a fresh probe supplies the explicit offset. Because playback-token mapping changed, schema v4 invalidates older JPEG preview cache rows; they are regenerated on demand while NVR originals remain untouched.
+
+Schema v5 adds local Trace sessions, bounded search iterations, iteration-to-job links and per-session event review state. It stores stable local IDs, normalized event tags and UTC milliseconds only; it does not persist NVR credentials, authorization headers or playback locators. Existing searches and derived media are unchanged. The settings row gains local `night_start_hour` and `night_end_hour` defaults used only to construct browser-visible overnight windows.
+
+The 2026-08-13 event-search compatibility update does not change the SQLite schema. New searches use bounded historical alarm logs instead of treating continuous recording files as events. Request validation now accepts only `motion`, `video_tamper`, `line_crossing` and `region_intrusion`; old sessions/presets containing `continuous` or catch-all `smart` remain stored for audit history, but the browser drops those labels before reuse. Cached event-audit JSON is versioned as schema `2` and refreshed read-only once so Smart rule endpoints use external camera IDs instead of stream track IDs. Existing intervals, clips and NVR media are unchanged.

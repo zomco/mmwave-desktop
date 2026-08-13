@@ -37,11 +37,12 @@ export function CameraSnapshot({ channel, overlays = [], eager = true }: { chann
 
 function RuleOverlaySvg({ overlays }: { overlays: RuleOverlay[] }) {
   if (!overlays.length) return null;
+  const colors = ["#6ee7b7", "#fbbf24", "#60a5fa", "#f472b6"];
   return <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="NVR 事件规则区域">
     {overlays.map((overlay, index) => overlay.kind === "grid"
       ? overlay.active_cells.map(([x, y]) => <rect key={`${index}-${x}-${y}`} x={x * 1000 / overlay.width} y={y * 1000 / overlay.height} width={1000 / overlay.width} height={1000 / overlay.height} fill="rgba(16,185,129,.22)" stroke="rgba(110,231,183,.38)" strokeWidth="1" />)
       : overlay.kind === "line"
-        ? <polyline key={index} points={overlay.points.map(([x, y]) => `${x * 1000 / overlay.width},${y * 1000 / overlay.height}`).join(" ")} fill="none" stroke="#fbbf24" strokeWidth="10" vectorEffect="non-scaling-stroke" />
-        : <polygon key={index} points={overlay.points.map(([x, y]) => `${x * 1000 / overlay.width},${y * 1000 / overlay.height}`).join(" ")} fill="rgba(16,185,129,.2)" stroke="#6ee7b7" strokeWidth="7" vectorEffect="non-scaling-stroke" />)}
+        ? <g key={index}><polyline points={overlay.points.map(([x, y]) => `${x * 1000 / overlay.width},${y * 1000 / overlay.height}`).join(" ")} fill="none" stroke={colors[index % colors.length]} strokeWidth="8" vectorEffect="non-scaling-stroke" /><text x={(overlay.points[0]?.[0] ?? 0) * 1000 / overlay.width} y={(overlay.points[0]?.[1] ?? 0) * 1000 / overlay.height - 20} fill="white" stroke="rgba(0,0,0,.8)" strokeWidth="5" paintOrder="stroke" fontSize="42" fontWeight="700">警戒线 {index + 1}</text></g>
+        : <g key={index}><polygon points={overlay.points.map(([x, y]) => `${x * 1000 / overlay.width},${y * 1000 / overlay.height}`).join(" ")} fill={`${colors[index % colors.length]}33`} stroke={colors[index % colors.length]} strokeWidth="6" vectorEffect="non-scaling-stroke" /><text x={(overlay.points[0]?.[0] ?? 0) * 1000 / overlay.width} y={(overlay.points[0]?.[1] ?? 0) * 1000 / overlay.height - 20} fill="white" stroke="rgba(0,0,0,.8)" strokeWidth="5" paintOrder="stroke" fontSize="42" fontWeight="700">区域 {index + 1}</text></g>)}
   </svg>;
 }

@@ -33,6 +33,9 @@ from .schemas import (
     SearchRequest,
     SearchPresetRequest,
     SettingsPatchRequest,
+    TraceIterationRequest,
+    TraceReviewRequest,
+    TraceSessionRequest,
 )
 from .services import DesktopServices
 
@@ -250,6 +253,55 @@ def create_app(
     def delete_search_preset(preset_id: str) -> Response:
         application_services.delete_search_preset(preset_id)
         return Response(status_code=204)
+
+    @app.get(api + "/trace-sessions")
+    def list_trace_sessions(limit: int = Query(default=10, ge=1, le=50)) -> list[dict]:
+        return application_services.list_trace_sessions(limit=limit)
+
+    @app.post(api + "/trace-sessions", status_code=201)
+    def create_trace_session(request: TraceSessionRequest) -> dict:
+        return application_services.create_trace_session(request.model_dump())
+
+    @app.get(api + "/trace-sessions/{session_id}")
+    def get_trace_session(session_id: str) -> dict:
+        return application_services.get_trace_session(session_id)
+
+    @app.delete(api + "/trace-sessions/{session_id}", status_code=204)
+    def delete_trace_session(session_id: str) -> Response:
+        application_services.delete_trace_session(session_id)
+        return Response(status_code=204)
+
+    @app.post(api + "/trace-sessions/{session_id}/iterations", status_code=202)
+    def create_trace_iteration(session_id: str, request: TraceIterationRequest) -> dict:
+        return application_services.create_trace_iteration(
+            session_id, request.model_dump(by_alias=True)
+        )
+
+    @app.get(api + "/trace-sessions/{session_id}/results")
+    def get_trace_session_results(
+        session_id: str,
+        limit: int = Query(default=12, ge=1, le=200),
+        offset: int = Query(default=0, ge=0, le=100_000),
+        review_state: str = Query(
+            default="active", pattern="^(active|all|unreviewed|reviewed|excluded|candidate)$"
+        ),
+        from_at: str | None = Query(default=None, alias="from"),
+        to_at: str | None = Query(default=None, alias="to"),
+    ) -> dict:
+        return application_services.trace_session_results(
+            session_id,
+            limit=limit,
+            offset=offset,
+            review_state=review_state,
+            from_at=from_at,
+            to_at=to_at,
+        )
+
+    @app.patch(api + "/trace-sessions/{session_id}/events/{bookmark_id}")
+    def patch_trace_review(
+        session_id: str, bookmark_id: str, request: TraceReviewRequest
+    ) -> dict:
+        return application_services.patch_trace_review(session_id, bookmark_id, request.state)
 
     @app.get(api + "/bookmarks")
     def list_bookmarks(

@@ -17,6 +17,9 @@ from .models import (
     DeviceIdentity,
     EventAuditReport,
     EventRuleStatus,
+    HistoricalEvent,
+    HistoricalEventQuery,
+    HistoricalEventResult,
     MediaChannel,
     MediaResolution,
     Page,
@@ -33,7 +36,17 @@ DEVICE_TIME = "/ISAPI/System/time"
 CHANNELS = "/ISAPI/System/Video/inputs/channels"
 INPUT_PROXY_CHANNEL_STATUS = "/ISAPI/ContentMgmt/InputProxy/channels/status"
 RECORD_SEARCH = "/ISAPI/ContentMgmt/search"
+LOG_SEARCH = "/ISAPI/ContentMgmt/logSearch"
 _OFFSET = re.compile(r"(?:Z|[+-][0-9]{2}:[0-9]{2})$")
+_EVENT_LOG_CLASSES = {
+    "motion": "motionStart",
+    "video_tamper": "hideStart",
+    "line_crossing": "lineDetectionStart",
+    "region_intrusion": "fieldDetectionStart",
+}
+_EVENT_LOG_CLASS_LOOKUP = {
+    value.lower(): key for key, value in _EVENT_LOG_CLASSES.items()
+}
 
 
 class HikvisionAdapter:
@@ -143,8 +156,9 @@ class HikvisionAdapter:
             track_id = channel.stream_track_ids[0] if channel.stream_track_ids else None
             probes = (
                 ("motion", channel.external_id, f"/ISAPI/System/Video/inputs/channels/{channel.external_id}/motionDetection", "VMD"),
-                ("line_crossing", track_id, f"/ISAPI/Smart/LineDetection/{track_id}" if track_id else None, "linedetection"),
-                ("region_intrusion", track_id, f"/ISAPI/Smart/FieldDetection/{track_id}" if track_id else None, "fielddetection"),
+                ("video_tamper", channel.external_id, f"/ISAPI/System/Video/inputs/channels/{channel.external_id}/tamperDetection", "shelteralarm"),
+                ("line_crossing", channel.external_id, f"/ISAPI/Smart/LineDetection/{channel.external_id}", "linedetection"),
+                ("region_intrusion", channel.external_id, f"/ISAPI/Smart/FieldDetection/{channel.external_id}", "fielddetection"),
             )
             for event_type, identity, endpoint, trigger_type in probes:
                 if not identity or not endpoint:
@@ -166,6 +180,127 @@ class HikvisionAdapter:
                 {"code": "EVENT_AUDIT_NO_ONLINE_CHANNELS", "message": "No enabled channel was available for event inspection."}
             )
         return EventAuditReport(self.now(), tuple(rules), tuple(warnings))
+
+    def search_historical_events(
+        self,
+        query: HistoricalEventQuery,
+        *,
+        maximum_pages_per_type: int = 50,
+        maximum_results: int = 2_000,
+    ) -> HistoricalEventResult:
+        """Search bounded NVR alarm logs and return event bookmarks, not recording files."""
+        if query.end_at <= query.start_at:
+            raise ValueError("historical event query end must be after start")
+        if not query.external_channel_ids or len(query.external_channel_ids) > 64:
+            raise ValueError("historical event query requires 1 to 64 channels")
+        if not 1 <= query.page_size <= 100:
+            raise ValueError("page_size must be between 1 and 100")
+        if maximum_pages_per_type < 1 or maximum_results < 1:
+            raise ValueError("historical event pagination bounds must be positive")
+        requested_types = tuple(dict.fromkeys(query.event_types or tuple(_EVENT_LOG_CLASSES)))
+        unsupported = set(requested_types) - set(_EVENT_LOG_CLASSES)
+        if unsupported:
+            raise ValueError(f"unsupported historical event type: {sorted(unsupported)[0]}")
+        selected_channels = set(query.external_channel_ids)
+        probe_channel = query.external_channel_ids[0]
+        if not re.fullmatch(r"[0-9A-Za-z._-]{1,64}", probe_channel):
+            raise UnsafePayloadError("NVR channel identity is unsafe for event log search")
+        result: list[HistoricalEvent] = []
+        seen: set[str] = set()
+        truncated = False
+        for event_type in requested_types:
+            position = 0
+            for _ in range(maximum_pages_per_type):
+                body = self._event_log_search_body(query, event_type, probe_channel, position)
+                response = self.transport.request(
+                    "POST",
+                    LOG_SEARCH,
+                    body=body,
+                    headers={"Content-Type": "application/xml; charset=utf-8"},
+                )
+                root = parse_xml(response.body)
+                status = " ".join((text(root, "responseStatusStrg") or "").upper().split())
+                matches = children(root, "searchMatchItem")
+                for item in matches:
+                    parsed = self._parse_historical_event(item, selected_channels)
+                    if (
+                        parsed is None
+                        or parsed.event_type != event_type
+                        or parsed.occurred_at < query.start_at
+                        or parsed.occurred_at >= query.end_at
+                        or parsed.source_id in seen
+                    ):
+                        continue
+                    seen.add(parsed.source_id)
+                    result.append(parsed)
+                    if len(result) >= maximum_results:
+                        truncated = "MORE" in status or len(matches) > 0
+                        return HistoricalEventResult(tuple(sorted(result, key=lambda event: event.occurred_at)), truncated)
+                if "MORE" not in status:
+                    break
+                if not matches:
+                    raise PaginationError("NVR event log search did not advance")
+                position += len(matches)
+            else:
+                truncated = True
+        return HistoricalEventResult(tuple(sorted(result, key=lambda event: event.occurred_at)), truncated)
+
+    @staticmethod
+    def _parse_historical_event(item, selected_channels: set[str]) -> HistoricalEvent | None:
+        classification = text(item, "metaId")
+        occurred = text(item, "StartDateTime") or text(item, "startTime")
+        if not classification or not occurred or len(classification) > 256:
+            return None
+        match = re.fullmatch(
+            r"log\.hikvision\.com/Alarm/([A-Za-z]+)/([0-9A-Za-z._-]{1,64})",
+            classification,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        event_type = _EVENT_LOG_CLASS_LOOKUP.get(match.group(1).lower())
+        channel_external_id = match.group(2)
+        if event_type is None or channel_external_id not in selected_channels:
+            return None
+        occurred_at = _parse_time(occurred)
+        source_id = hashlib.sha256(
+            f"{classification.lower()}|{occurred_at.isoformat()}".encode("utf-8")
+        ).hexdigest()[:32]
+        return HistoricalEvent(
+            channel_external_id,
+            event_type,
+            occurred_at,
+            classification,
+            source_id,
+        )
+
+    @staticmethod
+    def _event_log_search_body(
+        query: HistoricalEventQuery,
+        event_type: str,
+        probe_channel: str,
+        position: int,
+    ) -> bytes:
+        event_class = _EVENT_LOG_CLASSES[event_type]
+        search_id = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            "tracecue:event-log-search:"
+            f"{event_type}|{query.start_at.isoformat()}|{query.end_at.isoformat()}|"
+            f"{'|'.join(query.external_channel_ids)}",
+        )
+        start = query.start_at.isoformat().replace("+00:00", "Z")
+        end = query.end_at.isoformat().replace("+00:00", "Z")
+        meta_id = html.escape(f"log.hikvision.com/Alarm/{event_class}/{probe_channel}")
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<CMSearchDescription version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">'
+            f"<searchID>{search_id}</searchID>"
+            f"<timeSpanList><timeSpan><startTime>{start}</startTime><endTime>{end}</endTime></timeSpan></timeSpanList>"
+            f"<metaId>{meta_id}</metaId>"
+            f"<searchResultPostion>{position}</searchResultPostion>"
+            f"<maxResults>{query.page_size}</maxResults>"
+            "</CMSearchDescription>"
+        ).encode("utf-8")
 
     def _inspect_event_rule(
         self,
@@ -565,10 +700,22 @@ def _parse_rule_overlays(root, event_type: str) -> tuple[RuleOverlay, ...]:
         )
         if len(points) < 2 or points in seen:
             continue
+        kind = "line" if event_type == "line_crossing" or len(points) == 2 else "polygon"
+        unique_points = set(points)
+        if kind == "line" and len(unique_points) < 2:
+            continue
+        if kind == "polygon":
+            if len(unique_points) < 3:
+                continue
+            twice_area = abs(sum(
+                first[0] * second[1] - second[0] * first[1]
+                for first, second in zip(points, points[1:] + points[:1])
+            ))
+            if twice_area == 0:
+                continue
         seen.add(points)
         width = max(1_000, max(point[0] for point in points))
         height = max(1_000, max(point[1] for point in points))
-        kind = "line" if event_type == "line_crossing" or len(points) == 2 else "polygon"
         overlays.append(RuleOverlay(kind, width, height, points=points))
         if len(overlays) >= 64:
             break

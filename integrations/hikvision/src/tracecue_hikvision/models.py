@@ -93,6 +93,30 @@ class RecordingSpan:
 
 
 @dataclass(frozen=True, slots=True)
+class HistoricalEventQuery:
+    external_channel_ids: tuple[str, ...]
+    event_types: tuple[str, ...]
+    start_at: datetime
+    end_at: datetime
+    page_size: int = 100
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalEvent:
+    external_channel_id: str
+    event_type: str
+    occurred_at: datetime
+    classification: str
+    source_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalEventResult:
+    items: tuple[HistoricalEvent, ...]
+    truncated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Page:
     items: tuple[RecordingSpan, ...]
     next_position: int | None

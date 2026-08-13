@@ -11,8 +11,8 @@
 | `device_info` | Read model/firmware/time identity | Required |
 | `channel_discovery` | Enumerate enabled media channels | Required |
 | `record_search` | Search recorded spans by channel/time | Required |
-| `record_classification` | Receive coarse `motion`/`smart`-like classification | Optional enhancement |
-| `historical_event_search` | Query fine historical smart events | Model-specific enhancement |
+| `record_classification` | Receive coarse recording-file classification | Media fallback only; not an event source |
+| `historical_event_search` | Query ordinary and Smart historical alarm logs | Implemented for evidenced ISAPI firmware |
 | `realtime_event_stream` | Receive events while connected | Not a historical MVP source |
 | `playback_by_uri` | Consume a search-result playback locator | Preferred where supported |
 | `playback_by_time` | Request channel/time RTSP playback | Fallback/alternative |
@@ -25,13 +25,13 @@ States are `supported`, `unsupported`, `unknown` and `degraded`. Every non-unkno
 
 ## Search behavior
 
-Recording search can be paginated and may return recording files/spans rather than the fine events visible in an official client. The adapter normalizes results but preserves raw classification and locator privately for diagnostics. It detects non-progressing pagination and enforces a result/time bound.
+Recording search can be paginated and may return hour-long continuous files rather than events. TraceCue therefore queries the read-only `/ISAPI/ContentMgmt/logSearch` alarm log for event bookmarks, then resolves each event time against ordinary recording search only when producing a preview or clip. The supported normalized types are `motion`, `video_tamper`, `line_crossing` and `region_intrusion`; continuous recording and vague catch-all Smart labels are never event filters. Alarm-log pagination is bounded, detects non-progress, filters untrusted results back to the selected channels/type/window and reports truncation instead of persisting raw log bodies.
 
 ## Local discovery and configuration audit
 
 TraceCue does not redistribute or reverse-engineer Hikvision's private SADP implementation. It uses the standardized ONVIF WS-Discovery probe, then a bounded unauthenticated ISAPI-candidate probe on directly attached private `/24` networks. This provides a SADP-like onboarding list but cannot promise SADP's layer-2 reach across every adapter/VLAN. Hikvision's own support page says SADP reaches end of life after April 2026 and recommends HiTools Delivery instead: [official tool notice](https://display.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/).
 
-The event audit reads known motion, line-crossing, intrusion and trigger-link resources per channel/track. It parses bounded motion grids and coordinate lists into safe grid/polygon/line overlays. A denied or absent endpoint is recorded as degraded/unsupported for that model and firmware. ONVIF defines standard event and analytics operations such as `GetEventProperties`, `PullMessages`, `GetRules` and `GetSupportedRules`, but support must still be observed per device: [ONVIF operation index](https://www.onvif.org/onvif/ver20/util/operationIndex.html). A realtime subscription cannot reconstruct notifications missed while TraceCue was closed.
+The event audit reads known motion/tamper ordinary events and line-crossing/intrusion Smart events per external camera ID, plus trigger-link resources. Stream track IDs such as `101` are not valid substitutes for Smart-rule channel IDs. The parser turns bounded motion grids and coordinate lists into safe grid/polygon/line overlays; a device may return multiple intrusion polygons. A denied or absent endpoint is recorded as degraded/unknown for that model and firmware, and the UI hides cameras lacking evidence for a selected Smart type. ONVIF defines standard event and analytics operations such as `GetEventProperties`, `PullMessages`, `GetRules` and `GetSupportedRules`, but support must still be observed per device: [ONVIF operation index](https://www.onvif.org/onvif/ver20/util/operationIndex.html). A realtime subscription cannot reconstruct notifications missed while TraceCue was closed.
 
 ## Channel identity
 
@@ -54,7 +54,7 @@ Hikvision documents `.../Streaming/channels/<channel><stream>` for live main/sub
 
 ## Authorized hardware observation (2026-08-13)
 
-`DS-7808NB-K1/8P` firmware `V4.30.090` exposed eight online channels with main/sub track identities, authenticated search/playback and motion configuration. Motion used an `18 × 22` hexadecimal grid map; the parser returned one bounded grid overlay instead of the prior false “0 regions.” Both documented RTSP live paths and the HTTP preview path returned 403 for the saved account, while recording search/playback remained authorized; the bounded recent-recording fallback produced a camera-identification JPEG. A cached three-second WebP and a bounded H.264 export completed. Their OSD changed from the UTC-shifted night recording to the requested daytime local hour after locator correction. Exact per-frame seek alignment and recent-snapshot freshness still depend on the recorder index and remain known hardware behaviors to measure. No customer image, address, serial or credential is stored in the repository.
+`DS-7808NB-K1/8P` firmware `V4.30.090` exposed eight online channels with main/sub track identities, authenticated search/playback, historical alarm logs and event configuration. Motion used an `18 × 22` hexadecimal grid map. `/ISAPI/Smart/LineDetection/1` and `/ISAPI/Smart/FieldDetection/1` were readable and enabled; field detection returned four region coordinate lists, while the equivalent `.../101` calls were the original integration bug. The tested alarm window returned motion entries plus 768 bounded line-crossing entries (more remained) and 411 intrusion entries; recording search for the same period returned only `timing` continuous files. Both documented RTSP live paths and the HTTP preview path returned 403 for the saved account, while recording search/playback remained authorized; the bounded recent-recording fallback produced a camera-identification JPEG. Cached preview and H.264 export paths remain hardware-tested. Exact per-frame seek alignment, log retention and result truncation remain firmware behaviors to measure. No customer image, address, serial, raw log body or credential is stored in the repository.
 
 ## Compatibility record
 

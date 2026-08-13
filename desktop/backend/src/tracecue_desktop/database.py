@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 MIGRATION_1 = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -250,12 +250,49 @@ MIGRATION_4 = """
 UPDATE event_previews SET status='failed', relative_path=NULL;
 """
 
+MIGRATION_5 = """
+CREATE TABLE trace_sessions (
+    id TEXT PRIMARY KEY,
+    channel_ids_json TEXT NOT NULL,
+    event_types_json TEXT NOT NULL,
+    preset_id TEXT REFERENCES search_presets(id) ON DELETE SET NULL,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL
+);
+CREATE TABLE trace_iterations (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES trace_sessions(id) ON DELETE CASCADE,
+    from_ms INTEGER NOT NULL,
+    to_ms INTEGER NOT NULL CHECK(to_ms > from_ms),
+    label TEXT NOT NULL,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL,
+    UNIQUE(session_id, from_ms, to_ms)
+);
+CREATE INDEX trace_iterations_session_time ON trace_iterations(session_id, from_ms, to_ms);
+CREATE TABLE trace_iteration_jobs (
+    iteration_id TEXT NOT NULL REFERENCES trace_iterations(id) ON DELETE CASCADE,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    PRIMARY KEY (iteration_id, job_id)
+);
+CREATE TABLE trace_event_reviews (
+    session_id TEXT NOT NULL REFERENCES trace_sessions(id) ON DELETE CASCADE,
+    interval_id TEXT NOT NULL REFERENCES intervals(id) ON DELETE CASCADE,
+    state TEXT NOT NULL CHECK(state IN ('reviewed', 'excluded', 'candidate')),
+    updated_ms INTEGER NOT NULL,
+    PRIMARY KEY (session_id, interval_id)
+);
+CREATE INDEX trace_reviews_session_state ON trace_event_reviews(session_id, state, updated_ms);
+"""
+
 
 DEFAULT_SETTINGS = {
     "clip_quota_bytes": 10 * 1024 * 1024 * 1024,
     "pre_roll_ms": 5_000,
     "post_roll_ms": 10_000,
     "preferred_port": 8765,
+    "night_start_hour": 18,
+    "night_end_hour": 6,
 }
 
 
@@ -302,6 +339,13 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
                     (4, now_ms),
+                )
+                current = 4
+            if current < 5:
+                connection.executescript(MIGRATION_5)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
+                    (5, now_ms),
                 )
             for key, value in DEFAULT_SETTINGS.items():
                 connection.execute(

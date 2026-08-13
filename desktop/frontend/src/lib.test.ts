@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comparisonMetrics, dateToLocalInput, eventPresentation, nvrProbePayload, sourcePresentation } from "./lib";
+import { comparisonMetrics, dateToLocalInput, eventCategory, eventPresentation, lastNightWindow, nvrProbePayload, shiftWindow, sourcePresentation } from "./lib";
 import type { Bookmark } from "./types";
 
 function bookmark(overrides: Partial<Bookmark>): Bookmark {
@@ -66,11 +66,32 @@ describe("local search windows", () => {
     const localTime = new Date(2026, 7, 12, 18, 30, 45);
     expect(dateToLocalInput(localTime)).toBe("2026-08-12T18:30");
   });
+
+  it("builds the most recent completed night with local calendar fields", () => {
+    const window = lastNightWindow(new Date(2026, 7, 13, 10, 30), 18, 6);
+    expect(dateToLocalInput(window.from)).toBe("2026-08-12T18:00");
+    expect(dateToLocalInput(window.to)).toBe("2026-08-13T06:00");
+  });
+
+  it("keeps early-morning searches inside the current overnight window", () => {
+    const now = new Date(2026, 7, 13, 2, 30);
+    const window = lastNightWindow(now, 18, 6);
+    expect(dateToLocalInput(window.from)).toBe("2026-08-12T18:00");
+    expect(dateToLocalInput(window.to)).toBe("2026-08-13T02:30");
+  });
+
+  it("shifts overnight windows by local calendar days", () => {
+    const shifted = shiftWindow({ from: new Date(2026, 7, 12, 18), to: new Date(2026, 7, 13, 6) }, -1);
+    expect(dateToLocalInput(shifted.from)).toBe("2026-08-11T18:00");
+    expect(dateToLocalInput(shifted.to)).toBe("2026-08-12T06:00");
+  });
 });
 
 describe("event presentation", () => {
   it("maps vendor classifications to user-facing behavior names", () => {
-    expect(eventPresentation("recordType.meta.hikvision.com/timing")).toBe("连续录像");
+    expect(eventPresentation("nvr.video_tamper")).toBe("遮挡报警");
     expect(eventPresentation("nvr.region_intrusion")).toBe("区域入侵");
+    expect(eventCategory("line_crossing")).toBe("smart");
+    expect(eventCategory("motion")).toBe("ordinary");
   });
 });

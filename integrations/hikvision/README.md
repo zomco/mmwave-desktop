@@ -10,17 +10,17 @@ This directory is the adapter boundary for Hikvision ISAPI and RTSP behavior. It
 probe(connection) -> CapabilityReport
 list_channels(connection) -> MediaChannel[]
 search_recordings(query) -> Page<RecordingSpan>
-search_intervals(query) -> Page<SourceInterval>
+search_historical_events(query) -> HistoricalEventResult
 resolve_media(request) -> MediaResolution
 ```
 
-The implementation must support fixture-based parsers, bounded pagination, Digest authentication, redacted diagnostics and model/firmware evidence. `search_intervals` may be unsupported while `search_recordings` works.
+The implementation supports fixture-based parsers, bounded pagination, Digest authentication, redacted diagnostics and model/firmware evidence. Historical event search uses the model-specific, read-only alarm-log endpoint and remains separately evidenced from recording-span search.
 
 Never expose raw playback locators to the browser or persist credential-bearing URLs. Official native SDK support, if required for specific models, belongs in an isolated bridge process rather than the main Web process.
 
 ## Implemented baseline
 
-`tracecue-hikvision` 0.1.0 provides a standard-library Digest transport with explicit TLS verification policy, bounded response reads, DTD/entity rejection, XML depth limits, device/time/channel parsing, evidence snapshots, bounded recording pagination, non-progress detection, safe RTSP locator handling and recording-gap resolution. Checked-in fixtures are synthetic and explicitly are not hardware support evidence.
+`tracecue-hikvision` 0.1.0 provides a standard-library Digest transport with explicit TLS verification policy, bounded response reads, DTD/entity rejection, XML depth limits, device/time/channel parsing, evidence snapshots, bounded recording and historical-alarm-log pagination, non-progress detection, ordinary/Smart rule inspection, safe grid/line/polygon overlays, safe RTSP locator handling and recording-gap resolution. Checked-in fixtures are synthetic and explicitly are not hardware support evidence.
 
 ```powershell
 python -m pip install -e "./integrations/hikvision[dev]"

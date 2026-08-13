@@ -16,6 +16,8 @@ GET    /api/v1/diagnostics/export
 
 `status` reports application version, schema version, FFmpeg availability and migration/recovery state. It must not expose filesystem secrets.
 
+Settings include `night_start_hour` and `night_end_hour` integers in the inclusive range `0..23`. They describe local wall-clock boundaries used by the UI's overnight shortcuts; stored search bounds remain UTC milliseconds and API timestamps remain RFC 3339 with explicit offsets.
+
 `diagnostics` previews a support bundle; `diagnostics/export` downloads the same JSON. Both redact NVR addresses, credentials, secret references, authorization headers, RTSP locators, filesystem paths and raw upstream bodies. The UI tells the user to review the bundle before sharing.
 
 ## NVRs and channels
@@ -39,7 +41,7 @@ POST   /api/v1/channels/{channel_id}/snapshot
 GET    /api/v1/channels/{channel_id}/snapshot/content
 ```
 
-`nvrs/discover` accepts a bounded `timeout_seconds` from 0.5 to 5.0. It uses ONVIF WS-Discovery first and an unauthenticated port-80 probe on at most three directly attached private `/24` networks as fallback. A fallback result is only an ISAPI candidate and must pass `nvrs/probe` with user-supplied credentials before addition. The event audit reads selected motion/smart rule and trigger-link settings; it returns bounded grid/polygon/line overlays where observed, never raw XML or credentials, and never modifies the NVR. Channel snapshots are asynchronous, try an evidenced low-rate track first, and fall back to a bounded recent-recording search when live-view permission is denied. They expire after 30 seconds and are served only from the local derived-media cache; the fallback is a camera-identification image, not a claim of realtime video.
+`nvrs/discover` accepts a bounded `timeout_seconds` from 0.5 to 5.0. It uses ONVIF WS-Discovery first and an unauthenticated port-80 probe on at most three directly attached private `/24` networks as fallback. A fallback result is only an ISAPI candidate and must pass `nvrs/probe` with user-supplied credentials before addition. Event audit schema `2` reads ordinary motion/tamper and Smart line-crossing/intrusion settings per external camera ID; it returns bounded grid/polygon/line overlays where observed, never raw XML or credentials, and never modifies the NVR. An older cached audit is refreshed read-only on first access. Channel snapshots are asynchronous, try an evidenced low-rate track first, and fall back to a bounded recent-recording search when live-view permission is denied. They expire after 30 seconds and are served only from the local derived-media cache; the fallback is a camera-identification image, not a claim of realtime video.
 
 Probe is read-only and returns structured evidence:
 
@@ -79,6 +81,13 @@ GET  /api/v1/search-jobs/{job_id}/results
 GET  /api/v1/search-presets
 POST /api/v1/search-presets
 DELETE /api/v1/search-presets/{preset_id}
+GET  /api/v1/trace-sessions
+POST /api/v1/trace-sessions
+GET  /api/v1/trace-sessions/{session_id}
+DELETE /api/v1/trace-sessions/{session_id}
+POST /api/v1/trace-sessions/{session_id}/iterations
+GET  /api/v1/trace-sessions/{session_id}/results
+PATCH /api/v1/trace-sessions/{session_id}/events/{bookmark_id}
 GET  /api/v1/bookmarks
 GET  /api/v1/bookmarks/{bookmark_id}
 GET  /api/v1/bookmarks/{bookmark_id}/preview
@@ -97,13 +106,17 @@ Example search:
   "channel_ids": ["channel_01"],
   "from": "2026-08-12T00:00:00+08:00",
   "to": "2026-08-13T00:00:00+08:00",
-  "source_modes": ["record_classification"],
+  "source_modes": ["historical_event_log"],
   "event_types": ["motion", "line_crossing"],
   "preset_id": "preset_01"
 }
 ```
 
-The effective target area is the selected stable camera-ID set; the browser groups camera images by NVR, so there is no recorder or free-text area filter. Presets persist camera IDs plus event tags and may span multiple recorders; the frontend submits one bounded search job per affected NVR. `search-jobs/{job_id}/results?limit=12&offset=0` returns a bounded page, total count and `has_more`, and only includes events produced by that search. JPEG preview creation is asynchronous and cached per event. The animation route lazily creates a verified, bounded three-second animated WebP for hover playback. All files are written atomically under the derived-media root.
+The effective target area is the selected stable camera-ID set; the browser groups camera images by NVR, so there is no recorder or free-text area filter. Accepted `event_types` are exactly `motion`, `video_tamper`, `line_crossing` and `region_intrusion`; an empty list searches all four. Continuous recording and catch-all Smart labels are rejected. Presets persist camera IDs plus event tags and may span multiple recorders; the frontend submits one bounded search job per affected NVR. Each job reads bounded historical alarm logs and persists one-second event bookmarks with stable IDs; `result.truncated` reports an adapter limit. Recording search is deferred until preview/clip generation, where it resolves media around the bookmark. `search-jobs/{job_id}/results?limit=12&offset=0` returns a bounded page, total count and `has_more`, and only includes events produced by that search. JPEG preview creation is asynchronous and cached per event. The animation route lazily creates a verified, bounded three-second animated WebP for hover playback. All files are written atomically under the derived-media root.
+
+A Trace session persists one camera/event-type scope and contains one or more bounded time iterations. Create a session with `{"channel_ids":["channel_01"],"event_types":["motion"]}`, then append a window with `{"from":"2026-08-12T18:00:00+08:00","to":"2026-08-13T06:00:00+08:00","label":"Last night"}`. Repeating the exact session/window is idempotent. Each affected NVR receives its own existing job (the persisted kind remains `recording_search` for schema compatibility, but its event source is the historical alarm log), while session results use stable interval IDs to accumulate and deduplicate events across iterations.
+
+`trace-sessions/{session_id}/results` accepts bounded `limit`/`offset`, `review_state=active|all|unreviewed|reviewed|excluded|candidate`, and an optional paired RFC 3339 `from`/`to` result focus. It returns global review-state counts, UTC hourly density buckets, the filtered page and the search-job identity required for a candidate clip. `active` excludes only explicitly excluded events. Review patches persist `unreviewed`, `reviewed`, `excluded` or `candidate` per session; setting `unreviewed` removes the explicit review row. Session records contain stable IDs and event tags, never credentials, authorization headers or playback locators. Deleting an NVR also removes Trace sessions whose camera scope referenced that NVR.
 
 Large searches are jobs. Bookmark lists use opaque server cursors; Hikvision pagination tokens/positions do not leak through the API.
 

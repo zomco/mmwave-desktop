@@ -17,6 +17,8 @@ from tracecue_hikvision import (
     DiscoveredDevice,
     EventAuditReport,
     EventRuleStatus,
+    HistoricalEvent,
+    HistoricalEventResult,
     HikvisionAdapter,
     MediaChannel,
     Page,
@@ -62,6 +64,20 @@ class FakeAdapter:
 
     def search_recordings(self, query):
         return Page(self.spans, None, True)
+
+    def search_historical_events(self, query):
+        items = ()
+        if query.start_at <= NOW < query.end_at and (not query.event_types or "motion" in query.event_types):
+            items = (
+                HistoricalEvent(
+                    "1",
+                    "motion",
+                    NOW,
+                    "log.hikvision.com/Alarm/motionStart/1",
+                    "fixture-event-1",
+                ),
+            )
+        return HistoricalEventResult(items)
 
     def inspect_event_settings(self, channels):
         return EventAuditReport(

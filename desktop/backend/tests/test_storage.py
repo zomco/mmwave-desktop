@@ -77,14 +77,21 @@ def test_schema_v4_invalidates_pre_timezone_preview_cache(tmp_path: Path) -> Non
         "INSERT INTO event_previews(interval_id, status, relative_path, created_ms, updated_ms) "
         "VALUES ('interval_1', 'ready', 'previews/old.jpg', 100, 100)"
     )
-    database.execute("DELETE FROM schema_migrations WHERE version=4")
+    for table in (
+        "trace_event_reviews",
+        "trace_iteration_jobs",
+        "trace_iterations",
+        "trace_sessions",
+    ):
+        database.execute(f"DROP TABLE {table}")
+    database.execute("DELETE FROM schema_migrations WHERE version IN (4, 5)")
 
     database.initialize(200)
 
     assert database.one(
         "SELECT status, relative_path FROM event_previews WHERE interval_id='interval_1'"
     ) == {"status": "failed", "relative_path": None}
-    assert database.one("SELECT MAX(version) AS version FROM schema_migrations") == {"version": 4}
+    assert database.one("SELECT MAX(version) AS version FROM schema_migrations") == {"version": 5}
 
 
 @pytest.mark.skipif(os.name != "nt", reason="DPAPI is Windows-only")

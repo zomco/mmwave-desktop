@@ -11,8 +11,8 @@
 | `device_info` | 读取型号/固件/时间身份 | 必需 |
 | `channel_discovery` | 枚举已启用媒体通道 | 必需 |
 | `record_search` | 按通道/时间检索录像 Span | 必需 |
-| `record_classification` | 获得 `motion`/`smart` 类粗分类 | 可选增强 |
-| `historical_event_search` | 查询细颗粒历史智能事件 | 型号专有增强 |
+| `record_classification` | 获得粗粒度录像文件分类 | 仅作媒体回退，不作为事件来源 |
+| `historical_event_search` | 查询普通/Smart 历史报警日志 | 已在有实证的 ISAPI 固件实现 |
 | `realtime_event_stream` | 连接期间接收事件 | 不作为历史 MVP 来源 |
 | `playback_by_uri` | 使用检索结果回放定位符 | 支持时优先 |
 | `playback_by_time` | 请求通道/时间 RTSP 回放 | 备用/替代 |
@@ -25,13 +25,13 @@
 
 ## 检索行为
 
-录像检索可能分页，返回的也可能是录像文件/Span，而不是官方客户端可见的精细事件。适配器归一化结果，但私下保留原始分类和 locator 用于诊断。必须检测不前进的分页并限制结果数和总耗时。
+录像检索可能分页，并可能返回一小时以上的连续录像文件而不是事件。因此 TraceCue 使用只读 `/ISAPI/ContentMgmt/logSearch` 报警日志建立事件书签，只在生成预览/片段时才把事件时间映射到普通录像检索。支持的归一化类型为 `motion`、`video_tamper`、`line_crossing` 和 `region_intrusion`；连续录像与模糊的 Smart 兜底标签不会成为事件筛选项。报警日志分页有界、检测不前进，并把不可信结果重新约束到所选通道/类型/时间窗；达到上限时报告截断，不保存原始日志正文。
 
 ## 局域网发现与配置审计
 
 TraceCue 不再分发或逆向海康私有 SADP 实现。它先发送标准 ONVIF WS-Discovery 探针，再在本机直连私有 `/24` 网段执行有界、未认证的 ISAPI 候选探测。这样能提供类似 SADP 的添加列表，但不能承诺 SADP 在所有网卡/VLAN 上的二层可达性。海康官方支持页说明 SADP 在 2026 年 4 月后停止维护，并建议迁移到 HiTools Delivery：[官方工具通知](https://display.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/)。
 
-事件审计按通道/track 读取已知的移动侦测、越界、区域入侵与 trigger-link 资源，并把有界移动栅格和坐标列表解析成安全的栅格/多边形/越界线覆盖层。端点被拒绝或不存在时，按该型号/固件记录为 degraded/unsupported。ONVIF 定义了 `GetEventProperties`、`PullMessages`、`GetRules`、`GetSupportedRules` 等标准事件/分析操作，但仍须逐设备实测：[ONVIF operation index](https://www.onvif.org/onvif/ver20/util/operationIndex.html)。实时订阅无法重建 TraceCue 关闭期间错过的通知。
+事件审计按摄像机外部通道 ID 读取移动侦测/遮挡报警普通事件、越界/区域入侵 Smart 事件及 trigger-link 资源。`101` 一类码流 track ID 不能替代 Smart 规则通道 ID。解析器把有界移动栅格和坐标列表转换为安全的栅格/多边形/越界线覆盖层；设备可以返回多个入侵区域。端点被拒绝或不存在时，按该型号/固件记录为 degraded/unknown；选择 Smart 类型时，界面隐藏缺少该能力证据的摄像机。ONVIF 定义了 `GetEventProperties`、`PullMessages`、`GetRules`、`GetSupportedRules` 等标准事件/分析操作，但仍须逐设备实测：[ONVIF operation index](https://www.onvif.org/onvif/ver20/util/operationIndex.html)。实时订阅无法重建 TraceCue 关闭期间错过的通知。
 
 ## 通道身份
 
@@ -54,7 +54,7 @@ TraceCue 不再分发或逆向海康私有 SADP 实现。它先发送标准 ONVI
 
 ## 经授权硬件观测（2026-08-13）
 
-`DS-7808NB-K1/8P` 固件 `V4.30.090` 返回 8 个在线通道及主/子 track 身份，录像检索/回放和移动侦测配置均可认证读取。移动侦测使用 `18 × 22` 十六进制 grid map；解析器现返回一个有界栅格覆盖层，不再错误显示“0 区域”。已保存账号访问两个已记录 RTSP 实时路径和 HTTP preview 路径时均返回 403，但录像检索/回放仍获授权；有界最近录像回退成功生成摄像机识别 JPEG。缓存的 3 秒 WebP 与有界 H.264 导出均已完成；修正 locator 后，其 OSD 已从偏到 UTC 夜间的录像恢复到用户请求的白天本地小时。精确逐帧 seek 和最近截图新鲜度仍受录像机索引影响，属于后续需要量化的硬件行为。仓库未保存客户画面、地址、序列号或凭据。
+`DS-7808NB-K1/8P` 固件 `V4.30.090` 返回 8 个在线通道及主/子 track 身份，录像检索/回放、历史报警日志和事件配置均可认证读取。移动侦测使用 `18 × 22` 十六进制 grid map。`/ISAPI/Smart/LineDetection/1` 与 `/ISAPI/Smart/FieldDetection/1` 可读且已启用；区域入侵返回 4 组坐标，而原先错误调用的 `.../101` 正是集成缺陷。同一实测报警窗口返回移动事件、768 条有界越界事件（仍有更多）和 411 条区域入侵事件；录像检索却只返回 `timing` 连续文件。已保存账号访问两个 RTSP 实时路径和 HTTP preview 路径时均返回 403，但录像检索/回放仍获授权；有界最近录像回退可生成摄像机识别 JPEG，缓存预览与 H.264 导出路径也经过硬件验证。精确逐帧 seek、日志保留期与结果截断仍是后续需要量化的固件行为。仓库未保存客户画面、地址、序列号、原始日志正文或凭据。
 
 ## 兼容记录
 

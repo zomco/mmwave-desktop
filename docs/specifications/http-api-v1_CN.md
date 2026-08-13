@@ -16,6 +16,8 @@ GET    /api/v1/diagnostics/export
 
 `status` 返回应用版本、schema 版本、FFmpeg 可用性和迁移/恢复状态，不得暴露文件系统秘密。
 
+设置包含闭区间 `0..23` 内的整数 `night_start_hour` 和 `night_end_hour`。它们表示界面夜间快捷操作使用的本机墙上时钟边界；持久检索范围仍使用 UTC 毫秒，API 时间戳仍为带明确偏移的 RFC 3339。
+
 `diagnostics` 预览支持诊断包，`diagnostics/export` 下载相同 JSON。两者都会脱敏 NVR 地址、凭据、secret 引用、Authorization header、RTSP locator、文件系统路径和原始上游 body；UI 会提示用户在分享前人工复核。
 
 ## NVR 与通道
@@ -39,7 +41,7 @@ POST   /api/v1/channels/{channel_id}/snapshot
 GET    /api/v1/channels/{channel_id}/snapshot/content
 ```
 
-`nvrs/discover` 接受 0.5 到 5.0 秒的有界 `timeout_seconds`。它优先使用 ONVIF WS-Discovery，回退方案只在最多三个本机直连私有 `/24` 网段上进行未认证的 80 端口探测。回退结果只是 ISAPI 候选，必须由用户提供凭据通过 `nvrs/probe` 后才能添加。事件审计只读部分移动/智能规则与 trigger-link 配置；在有实测证据时返回有界栅格/多边形/越界线覆盖层，禁止返回原始 XML/凭据，也绝不修改 NVR。通道截图异步生成，优先使用设备证据中的低码率 track；实时查看权限被拒绝时，回退到有界的最近录像检索。截图 30 秒过期并只从本地派生媒体缓存交付；回退画面只用于识别摄像机，不宣称是实时视频。
+`nvrs/discover` 接受 0.5 到 5.0 秒的有界 `timeout_seconds`。它优先使用 ONVIF WS-Discovery，回退方案只在最多三个本机直连私有 `/24` 网段上进行未认证的 80 端口探测。回退结果只是 ISAPI 候选，必须由用户提供凭据通过 `nvrs/probe` 后才能添加。事件审计 schema `2` 按摄像机外部通道 ID 只读移动/遮挡普通事件与越界/区域入侵 Smart 事件；在有实测证据时返回有界栅格/多边形/越界线覆盖层，禁止返回原始 XML/凭据，也绝不修改 NVR。旧缓存审计在首次访问时进行一次只读刷新。通道截图异步生成，优先使用设备证据中的低码率 track；实时查看权限被拒绝时，回退到有界的最近录像检索。截图 30 秒过期并只从本地派生媒体缓存交付；回退画面只用于识别摄像机，不宣称是实时视频。
 
 Probe 只读并返回结构化证据：
 
@@ -79,6 +81,13 @@ GET  /api/v1/search-jobs/{job_id}/results
 GET  /api/v1/search-presets
 POST /api/v1/search-presets
 DELETE /api/v1/search-presets/{preset_id}
+GET  /api/v1/trace-sessions
+POST /api/v1/trace-sessions
+GET  /api/v1/trace-sessions/{session_id}
+DELETE /api/v1/trace-sessions/{session_id}
+POST /api/v1/trace-sessions/{session_id}/iterations
+GET  /api/v1/trace-sessions/{session_id}/results
+PATCH /api/v1/trace-sessions/{session_id}/events/{bookmark_id}
 GET  /api/v1/bookmarks
 GET  /api/v1/bookmarks/{bookmark_id}
 GET  /api/v1/bookmarks/{bookmark_id}/preview
@@ -97,13 +106,17 @@ GET  /api/v1/bookmarks/{bookmark_id}/animation/content
   "channel_ids": ["channel_01"],
   "from": "2026-08-12T00:00:00+08:00",
   "to": "2026-08-13T00:00:00+08:00",
-  "source_modes": ["record_classification"],
+  "source_modes": ["historical_event_log"],
   "event_types": ["motion", "line_crossing"],
   "preset_id": "preset_01"
 }
 ```
 
-实际目标区域是所选稳定摄像机 ID 集合；浏览器按 NVR 分组展示摄像机画面，因此不再提供录像机或自由文本区域筛选。Preset 保存摄像机 ID 与事件标签并可跨多台录像机；前端会为涉及的每台 NVR 提交一个有界检索作业。`search-jobs/{job_id}/results?limit=12&offset=0` 返回有界分页、总数和 `has_more`，且只包含本次检索产生的事件。JPEG 预览异步生成并按事件缓存；动图路由按需生成经过校验的有界 3 秒 WebP 悬停预览。全部文件均在派生媒体根目录原子写入。
+实际目标区域是所选稳定摄像机 ID 集合；浏览器按 NVR 分组展示摄像机画面，因此不再提供录像机或自由文本区域筛选。`event_types` 只接受 `motion`、`video_tamper`、`line_crossing`、`region_intrusion`，空列表表示四类全部检索；连续录像与 Smart 兜底标签会被拒绝。Preset 保存摄像机 ID 与事件标签并可跨多台录像机；前端会为涉及的每台 NVR 提交一个有界检索作业。作业读取有界历史报警日志，以稳定 ID 保存一秒事件书签；`result.truncated` 表示适配器达到上限。只有生成预览/片段时才执行录像检索，把书签时间映射到媒体。`search-jobs/{job_id}/results?limit=12&offset=0` 返回有界分页、总数和 `has_more`，且只包含本次检索产生的事件。JPEG 预览异步生成并按事件缓存；动图路由按需生成经过校验的有界 3 秒 WebP 悬停预览。全部文件均在派生媒体根目录原子写入。
+
+Trace 会话持久保存一组摄像机/事件类型范围，并包含一个或多个有界时间迭代。先用 `{"channel_ids":["channel_01"],"event_types":["motion"]}` 创建会话，再追加 `{"from":"2026-08-12T18:00:00+08:00","to":"2026-08-13T06:00:00+08:00","label":"昨晚"}` 时间窗。对同一会话重复相同时间窗保持幂等。涉及的每台 NVR 继续获得独立作业（为保持 schema 兼容，持久化 kind 仍是 `recording_search`，但事件来源已经是历史报警日志）；会话结果使用稳定 Interval ID 跨迭代累积去重。
+
+`trace-sessions/{session_id}/results` 接受有界 `limit`/`offset`、`review_state=active|all|unreviewed|reviewed|excluded|candidate`，以及可选且必须成对出现的 RFC 3339 `from`/`to` 结果聚焦范围。响应返回全局审阅状态计数、UTC 小时密度桶、过滤后的分页和生成候选片段所需的检索作业身份。`active` 只排除明确标为 `excluded` 的事件。审阅 PATCH 按会话持久保存 `unreviewed`、`reviewed`、`excluded` 或 `candidate`；设为 `unreviewed` 会删除显式审阅记录。会话记录只含稳定 ID 和事件标签，绝不包含凭据、Authorization header 或回放 locator。删除 NVR 时也会删除摄像机范围引用该 NVR 的 Trace 会话。
 
 大范围检索使用后台作业。书签列表使用服务端不透明 cursor，禁止透传海康分页位置或 token。
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FieldDetection xmlns="http://www.hikvision.com/ver20/XMLSchema">
+  <enabled>true</enabled>
+  <FieldDetectionRegionList>
+    <FieldDetectionRegion><id>1</id><RegionCoordinatesList>
+      <RegionCoordinates><positionX>100</positionX><positionY>100</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>400</positionX><positionY>100</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>400</positionX><positionY>400</positionY></RegionCoordinates>
+    </RegionCoordinatesList></FieldDetectionRegion>
+    <FieldDetectionRegion><id>2</id><RegionCoordinatesList>
+      <RegionCoordinates><positionX>600</positionX><positionY>600</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>900</positionX><positionY>600</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>900</positionX><positionY>900</positionY></RegionCoordinates>
+    </RegionCoordinatesList></FieldDetectionRegion>
+    <FieldDetectionRegion><id>3</id><RegionCoordinatesList>
+      <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+      <RegionCoordinates><positionX>0</positionX><positionY>0</positionY></RegionCoordinates>
+    </RegionCoordinatesList></FieldDetectionRegion>
+  </FieldDetectionRegionList>
+</FieldDetection>

@@ -78,26 +78,73 @@ export function dateToLocalInput(value: Date): string {
   );
 }
 
+export type TimeWindow = { from: Date; to: Date };
+
+export const eventDefinitions = [
+  { id: "motion", label: "移动侦测", category: "ordinary" },
+  { id: "video_tamper", label: "遮挡报警", category: "ordinary" },
+  { id: "line_crossing", label: "越界侦测", category: "smart" },
+  { id: "region_intrusion", label: "区域入侵", category: "smart" },
+] as const;
+
+export type EventType = typeof eventDefinitions[number]["id"];
+export type EventCategory = typeof eventDefinitions[number]["category"];
+
+export function eventCategory(value: string): EventCategory | null {
+  const normalized = value.replace(/^nvr\./, "");
+  return eventDefinitions.find((item) => item.id === normalized)?.category ?? null;
+}
+
+export function lastNightWindow(
+  now: Date,
+  nightStartHour = 18,
+  nightEndHour = 6,
+): TimeWindow {
+  const from = new Date(now);
+  const to = new Date(now);
+  const beforeNightEnd = now.getHours() < nightEndHour;
+  from.setHours(nightStartHour, 0, 0, 0);
+  to.setHours(nightEndHour, 0, 0, 0);
+  if (beforeNightEnd) {
+    from.setDate(from.getDate() - 1);
+    if (to.getTime() > now.getTime()) to.setTime(now.getTime());
+  } else {
+    from.setDate(from.getDate() - 1);
+  }
+  return { from, to };
+}
+
+export function shiftWindow(window: TimeWindow, days: number): TimeWindow {
+  const from = new Date(window.from);
+  const to = new Date(window.to);
+  from.setDate(from.getDate() + days);
+  to.setDate(to.getDate() + days);
+  return { from, to };
+}
+
+export function timeWindowLabel(window: TimeWindow): string {
+  const formatter = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" });
+  return `${formatter.format(window.from)} 晚间`;
+}
+
 const eventLabels: Record<string, string> = {
   motion: "移动侦测",
   "nvr.motion": "移动侦测",
+  video_tamper: "遮挡报警",
+  "nvr.video_tamper": "遮挡报警",
   line_crossing: "越界侦测",
   "nvr.line_crossing": "越界侦测",
   region_intrusion: "区域入侵",
   "nvr.region_intrusion": "区域入侵",
-  smart: "智能事件",
-  "nvr.smart": "智能事件",
-  continuous: "连续录像",
-  "nvr.continuous": "连续录像",
 };
 
 export function eventPresentation(value?: string | null): string {
   if (!value) return "录像候选";
   const normalized = value.toLowerCase();
   if (eventLabels[normalized]) return eventLabels[normalized];
-  if (normalized.includes("timing") || normalized.includes("continuous")) return "连续录像";
   if (normalized.includes("motion") || normalized.includes("vmd")) return "移动侦测";
+  if (normalized.includes("tamper") || normalized.includes("shelter") || normalized.includes("hide")) return "遮挡报警";
   if (normalized.includes("line") && normalized.includes("detect")) return "越界侦测";
   if (normalized.includes("intrusion") || normalized.includes("fielddetect")) return "区域入侵";
-  return "其他 NVR 事件";
+  return "未识别的 NVR 事件";
 }

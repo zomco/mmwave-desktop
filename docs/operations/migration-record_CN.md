@@ -35,6 +35,10 @@ ADR-0004 已于 2026-08-12 接受，单仓现使用 MIT。若后续历史资料�
 
 Gateway 为常驻 Interval 和有界诊断维护独立内部 SQLite。Desktop 永不读取该数据库；数据通过 `timeline.v1` 跨越边界。
 
-### Desktop schema v2-v4
+### Desktop schema v2-v5
 
 Schema v2 新增历史筛选/检索结果、只读 NVR 事件审计证据、事件 JPEG 预览和 Clip 来源。Schema v3 新增实测 NVR UTC 偏移、历史筛选的多 NVR 摄像机范围、会过期的通道截图和缓存事件 WebP 动图。已有筛选继续使用原摄像机列表，已有 Interval/Clip 的 UTC 时间戳不改变；已有 NVR 行在重新探测写入显式偏移前，会回退解析已保存的 POSIX 时区。由于回放参数映射发生变化，schema v4 会使旧 JPEG 预览缓存失效；后续按需重新生成，不会改动 NVR 原始录像。
+
+Schema v5 新增本地 Trace 会话、有界检索迭代、迭代与作业关联及逐会话事件审阅状态。它只保存稳定本地 ID、归一化事件标签和 UTC 毫秒，不保存 NVR 凭据、Authorization header 或回放 locator。已有检索与派生媒体不变。设置记录增加仅用于构造浏览器夜间时间窗的本机 `night_start_hour` 和 `night_end_hour` 默认值。
+
+2026-08-13 事件检索兼容更新不改变 SQLite schema。新检索使用有界历史报警日志，不再把连续录像文件当作事件。请求校验现在只接受 `motion`、`video_tamper`、`line_crossing`、`region_intrusion`；旧会话/筛选中的 `continuous` 或兜底 `smart` 标签为审计历史继续保留，但浏览器在复用前会丢弃。缓存事件审计 JSON 升级为 schema `2` 并进行一次只读刷新，使 Smart 规则端点使用摄像机外部通道 ID，而不是码流 track ID。已有 Interval、Clip 与 NVR 媒体均不改变。

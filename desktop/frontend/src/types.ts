@@ -68,6 +68,58 @@ export interface Bookmark {
     };
     [key: string]: unknown;
   };
+  review_state?: ReviewState;
+  search_job_id?: string;
+}
+
+export type ReviewState = "unreviewed" | "reviewed" | "excluded" | "candidate";
+export type ReviewFilter = ReviewState | "active" | "all";
+
+export interface TraceIteration {
+  id: string;
+  label: string;
+  from: string;
+  to: string;
+  state: "running" | "succeeded" | "failed" | "partial";
+  result_count: number;
+  jobs: Job[];
+  created_at: string;
+}
+
+export interface TraceSession {
+  id: string;
+  channel_ids: string[];
+  event_types: string[];
+  preset_id: string | null;
+  iterations: TraceIteration[];
+  result_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TraceDensityBucket {
+  start_at: string;
+  count: number;
+}
+
+export interface TraceSessionResults {
+  session_id: string;
+  items: Bookmark[];
+  total: number;
+  counts: Record<ReviewState, number>;
+  density: TraceDensityBucket[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface AppSettings {
+  clip_quota_bytes: number;
+  pre_roll_ms: number;
+  post_roll_ms: number;
+  preferred_port: number;
+  night_start_hour: number;
+  night_end_hour: number;
 }
 
 export interface SearchResults {
@@ -134,6 +186,7 @@ export interface EventRule {
 }
 
 export interface EventAudit {
+  schema_version: number;
   observed_at: string;
   rules: EventRule[];
   warnings: { code: string; message: string }[];

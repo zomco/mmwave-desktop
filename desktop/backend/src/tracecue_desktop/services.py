@@ -18,6 +18,7 @@ from tracecue_engine import dump_timeline, from_utc_millis, inspect_timeline, ut
 from tracecue_hikvision import (
     ConnectionConfig,
     DigestTransport,
+    HistoricalEventQuery,
     HikvisionAdapter,
     HikvisionError,
     RecordingQuery,
@@ -43,19 +44,6 @@ def new_id(prefix: str) -> str:
 def stable_id(prefix: str, *parts: str) -> str:
     digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:24]
     return f"{prefix}_{digest}"
-
-
-def _canonical_nvr_event_type(classification: str) -> str:
-    normalized = classification.lower()
-    if any(marker in normalized for marker in ("motion", "vmd")):
-        return "motion"
-    if "line" in normalized and "detect" in normalized:
-        return "line_crossing"
-    if any(marker in normalized for marker in ("fielddetect", "intrusion")):
-        return "region_intrusion"
-    if any(marker in normalized for marker in ("timing", "continuous")):
-        return "continuous"
-    return "smart"
 
 
 def rfc3339(value_ms: int | None) -> str | None:
@@ -179,6 +167,7 @@ class DesktopServices:
             raise
         try:
             self.sync_channels(nvr_id)
+            self.audit_nvr_events(nvr_id)
         except AppError:
             pass
         return self.get_nvr(nvr_id)
@@ -212,6 +201,17 @@ class DesktopServices:
 
     def delete_nvr(self, nvr_id: str) -> None:
         row = self._nvr_row(nvr_id)
+        channel_ids = {
+            item["id"] for item in self.database.all(
+                "SELECT id FROM nvr_channels WHERE nvr_id=?", (nvr_id,)
+            )
+        }
+        affected_sessions = [
+            item["id"] for item in self.database.all(
+                "SELECT id, channel_ids_json FROM trace_sessions"
+            )
+            if channel_ids.intersection(json.loads(item["channel_ids_json"]))
+        ]
         clip_rows = self.database.all(
             """
             SELECT c.relative_path FROM clips c
@@ -247,6 +247,8 @@ class DesktopServices:
             (nvr_id,),
         )
         with self.database.transaction() as db:
+            for session_id in affected_sessions:
+                db.execute("DELETE FROM trace_sessions WHERE id=?", (session_id,))
             db.execute(
                 "DELETE FROM sources WHERE kind='nvr' AND external_source_id=?",
                 (nvr_id,),
@@ -328,6 +330,7 @@ class DesktopServices:
         except HikvisionError as exc:
             raise AppError(exc.code, "NVR event settings could not be inspected.", 502) from exc
         payload = jsonable(report)
+        payload["schema_version"] = 2
         labels = {
             row["external_channel_id"]: row["alias"] or row["device_name"]
             for row in self.database.all(
@@ -357,7 +360,10 @@ class DesktopServices:
         )
         if not row:
             raise AppError("EVENT_AUDIT_NOT_RUN", "Event settings have not been inspected yet.", 404)
-        return json.loads(row["report_json"])
+        payload = json.loads(row["report_json"])
+        if payload.get("schema_version") != 2:
+            return self.audit_nvr_events(nvr_id)
+        return payload
 
     def patch_channel(self, channel_id: str, values: dict[str, Any]) -> dict[str, Any]:
         if "alias" not in values:
@@ -504,6 +510,302 @@ class DesktopServices:
         if not self.database.execute("DELETE FROM search_presets WHERE id=?", (preset_id,)):
             raise AppError("SEARCH_PRESET_NOT_FOUND", "The saved search filter was not found.", 404)
 
+    def list_trace_sessions(self, *, limit: int = 10) -> list[dict[str, Any]]:
+        rows = self.database.all(
+            "SELECT * FROM trace_sessions ORDER BY updated_ms DESC, id DESC LIMIT ?", (limit,)
+        )
+        return [self._public_trace_session(row) for row in rows]
+
+    def create_trace_session(self, values: dict[str, Any]) -> dict[str, Any]:
+        channel_ids = list(dict.fromkeys(values.get("channel_ids") or []))
+        if not channel_ids:
+            raise AppError("NVR_CHANNEL_REQUIRED", "At least one camera is required.", 422)
+        for channel_id in channel_ids:
+            self._channel_row(channel_id)
+        event_types = [
+            str(value).strip().lower()
+            for value in values.get("event_types") or []
+            if str(value).strip()
+        ]
+        if any(len(value) > 100 for value in event_types):
+            raise AppError("EVENT_FILTER_INVALID", "An event type filter is too long.", 422)
+        preset_id = values.get("preset_id")
+        if preset_id and not self.database.one(
+            "SELECT id FROM search_presets WHERE id=?", (preset_id,)
+        ):
+            raise AppError("SEARCH_PRESET_NOT_FOUND", "The saved search filter was not found.", 404)
+        session_id = new_id("trace")
+        timestamp = now_ms()
+        self.database.execute(
+            """
+            INSERT INTO trace_sessions(
+                id, channel_ids_json, event_types_json, preset_id, created_ms, updated_ms
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                json.dumps(channel_ids),
+                json.dumps(list(dict.fromkeys(event_types))),
+                preset_id,
+                timestamp,
+                timestamp,
+            ),
+        )
+        return self.get_trace_session(session_id)
+
+    def get_trace_session(self, session_id: str) -> dict[str, Any]:
+        return self._public_trace_session(self._trace_session_row(session_id))
+
+    def delete_trace_session(self, session_id: str) -> None:
+        self._trace_session_row(session_id)
+        self.database.execute("DELETE FROM trace_sessions WHERE id=?", (session_id,))
+
+    def create_trace_iteration(
+        self, session_id: str, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        session = self._trace_session_row(session_id)
+        start_ms = self._external_time(values["from"], "from")
+        end_ms = self._external_time(values["to"], "to")
+        if end_ms <= start_ms:
+            raise AppError("TIMELINE_RANGE_INVALID", "Search end must be after start.", 422)
+        existing = self.database.one(
+            "SELECT id FROM trace_iterations WHERE session_id=? AND from_ms=? AND to_ms=?",
+            (session_id, start_ms, end_ms),
+        )
+        if existing:
+            return self.get_trace_session(session_id)
+
+        channel_ids = json.loads(session["channel_ids_json"])
+        grouped: dict[str, list[str]] = {}
+        for channel_id in channel_ids:
+            channel = self._channel_row(channel_id)
+            grouped.setdefault(channel["nvr_id"], []).append(channel_id)
+        iteration_id = new_id("iteration")
+        timestamp = now_ms()
+        self.database.execute(
+            """
+            INSERT INTO trace_iterations(
+                id, session_id, from_ms, to_ms, label, created_ms, updated_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                iteration_id,
+                session_id,
+                start_ms,
+                end_ms,
+                str(values.get("label") or "自定义时间").strip(),
+                timestamp,
+                timestamp,
+            ),
+        )
+        try:
+            for nvr_id, grouped_channels in grouped.items():
+                job = self.enqueue_search(
+                    {
+                        "nvr_id": nvr_id,
+                        "channel_ids": grouped_channels,
+                        "from": values["from"],
+                        "to": values["to"],
+                        "source_modes": ["record_classification"],
+                        "event_types": json.loads(session["event_types_json"]),
+                        "preset_id": session["preset_id"],
+                    }
+                )
+                self.database.execute(
+                    "INSERT INTO trace_iteration_jobs(iteration_id, job_id) VALUES (?, ?)",
+                    (iteration_id, job["id"]),
+                )
+        except BaseException:
+            self.database.execute("DELETE FROM trace_iterations WHERE id=?", (iteration_id,))
+            raise
+        self.database.execute(
+            "UPDATE trace_sessions SET updated_ms=? WHERE id=?", (timestamp, session_id)
+        )
+        return self.get_trace_session(session_id)
+
+    def trace_session_results(
+        self,
+        session_id: str,
+        *,
+        limit: int = 12,
+        offset: int = 0,
+        review_state: str = "active",
+        from_at: str | None = None,
+        to_at: str | None = None,
+    ) -> dict[str, Any]:
+        self._trace_session_row(session_id)
+        if not 1 <= limit <= 200 or not 0 <= offset <= 100_000:
+            raise AppError("SEARCH_PAGE_INVALID", "Search page bounds are invalid.", 422)
+        allowed_states = {"active", "all", "unreviewed", "reviewed", "excluded", "candidate"}
+        if review_state not in allowed_states:
+            raise AppError("TRACE_REVIEW_FILTER_INVALID", "Review-state filter is invalid.", 422)
+        filters: list[str] = []
+        filter_parameters: list[Any] = []
+        if review_state == "active":
+            filters.append("COALESCE(r.state, 'unreviewed') != 'excluded'")
+        elif review_state != "all":
+            filters.append("COALESCE(r.state, 'unreviewed') = ?")
+            filter_parameters.append(review_state)
+        if (from_at is None) != (to_at is None):
+            raise AppError("TRACE_TIME_FILTER_INVALID", "Both time-filter bounds are required.", 422)
+        if from_at is not None and to_at is not None:
+            filter_start = self._external_time(from_at, "from")
+            filter_end = self._external_time(to_at, "to")
+            if filter_end <= filter_start:
+                raise AppError("TIMELINE_RANGE_INVALID", "Result filter end must be after start.", 422)
+            filters.append("i.resolved_start_ms >= ? AND i.resolved_start_ms < ?")
+            filter_parameters.extend((filter_start, filter_end))
+        filter_clause = " AND " + " AND ".join(filters) if filters else ""
+        rows = self.database.all(
+            f"""
+            WITH ranked_hits AS (
+                SELECT sr.interval_id, tij.job_id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY sr.interval_id ORDER BY j.created_ms DESC, j.id DESC
+                       ) AS hit_rank
+                FROM trace_iterations ti
+                JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+                JOIN jobs j ON j.id=tij.job_id
+                JOIN search_results sr ON sr.search_job_id=tij.job_id
+                WHERE ti.session_id=?
+            ), latest_hits AS (
+                SELECT interval_id, job_id FROM ranked_hits WHERE hit_rank=1
+            )
+            SELECT i.*, sc.label AS source_channel_label, sc.kind AS source_channel_kind,
+                   s.kind AS source_kind, s.external_source_id,
+                   COALESCE(nc.alias, nc.device_name) AS media_channel_label,
+                   latest_hits.job_id AS trace_search_job_id,
+                   COALESCE(r.state, 'unreviewed') AS trace_review_state
+            FROM latest_hits
+            JOIN intervals i ON i.id=latest_hits.interval_id
+            JOIN source_channels sc ON sc.id=i.source_channel_id
+            JOIN sources s ON s.id=i.source_id
+            LEFT JOIN nvr_channels nc ON nc.id=i.nvr_channel_id
+            LEFT JOIN trace_event_reviews r
+              ON r.session_id=? AND r.interval_id=i.id
+            WHERE 1=1 {filter_clause}
+            ORDER BY i.resolved_start_ms DESC, i.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (session_id, session_id, *filter_parameters, limit, offset),
+        )
+        counts = {state: 0 for state in ("unreviewed", "reviewed", "excluded", "candidate")}
+        for row in self.database.all(
+            """
+            WITH hits AS (
+                SELECT DISTINCT sr.interval_id
+                FROM trace_iterations ti
+                JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+                JOIN search_results sr ON sr.search_job_id=tij.job_id
+                WHERE ti.session_id=?
+            )
+            SELECT COALESCE(r.state, 'unreviewed') AS state, COUNT(*) AS count
+            FROM hits
+            LEFT JOIN trace_event_reviews r
+              ON r.session_id=? AND r.interval_id=hits.interval_id
+            GROUP BY COALESCE(r.state, 'unreviewed')
+            """,
+            (session_id, session_id),
+        ):
+            counts[row["state"]] = int(row["count"])
+        density = [
+            {"start_at": rfc3339(int(row["bucket_ms"])), "count": int(row["count"])}
+            for row in self.database.all(
+                """
+                WITH hits AS (
+                    SELECT DISTINCT sr.interval_id
+                    FROM trace_iterations ti
+                    JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+                    JOIN search_results sr ON sr.search_job_id=tij.job_id
+                    WHERE ti.session_id=?
+                )
+                SELECT CAST(i.resolved_start_ms / 3600000 AS INTEGER) * 3600000 AS bucket_ms,
+                       COUNT(*) AS count
+                FROM hits JOIN intervals i ON i.id=hits.interval_id
+                GROUP BY bucket_ms ORDER BY bucket_ms
+                """,
+                (session_id,),
+            )
+        ]
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = self._public_interval(row)
+            item["review_state"] = row["trace_review_state"]
+            item["search_job_id"] = row["trace_search_job_id"]
+            items.append(item)
+        filtered = self.database.one(
+            f"""
+            WITH hits AS (
+                SELECT DISTINCT sr.interval_id
+                FROM trace_iterations ti
+                JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+                JOIN search_results sr ON sr.search_job_id=tij.job_id
+                WHERE ti.session_id=?
+            )
+            SELECT COUNT(*) AS total
+            FROM hits JOIN intervals i ON i.id=hits.interval_id
+            LEFT JOIN trace_event_reviews r
+              ON r.session_id=? AND r.interval_id=i.id
+            WHERE 1=1 {filter_clause}
+            """,
+            (session_id, session_id, *filter_parameters),
+        )
+        filtered_total = int(filtered["total"] if filtered else 0)
+        return {
+            "session_id": session_id,
+            "items": items,
+            "total": filtered_total,
+            "counts": counts,
+            "density": density,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + len(items) < filtered_total,
+        }
+
+    def patch_trace_review(
+        self, session_id: str, bookmark_id: str, state: str
+    ) -> dict[str, Any]:
+        self._trace_session_row(session_id)
+        belongs = self.database.one(
+            """
+            SELECT 1 AS found
+            FROM trace_iterations ti
+            JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+            JOIN search_results sr ON sr.search_job_id=tij.job_id
+            WHERE ti.session_id=? AND sr.interval_id=? LIMIT 1
+            """,
+            (session_id, bookmark_id),
+        )
+        if not belongs:
+            raise AppError(
+                "TRACE_RESULT_MISMATCH", "The event does not belong to this Trace session.", 422
+            )
+        timestamp = now_ms()
+        if state == "unreviewed":
+            self.database.execute(
+                "DELETE FROM trace_event_reviews WHERE session_id=? AND interval_id=?",
+                (session_id, bookmark_id),
+            )
+        else:
+            self.database.execute(
+                """
+                INSERT INTO trace_event_reviews(session_id, interval_id, state, updated_ms)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(session_id, interval_id) DO UPDATE SET
+                    state=excluded.state, updated_ms=excluded.updated_ms
+                """,
+                (session_id, bookmark_id, state, timestamp),
+            )
+        self.database.execute(
+            "UPDATE trace_sessions SET updated_ms=? WHERE id=?", (timestamp, session_id)
+        )
+        return {
+            "session_id": session_id,
+            "bookmark_id": bookmark_id,
+            "state": state,
+            "updated_at": rfc3339(timestamp),
+        }
+
     def search_results(self, job_id: str, *, limit: int = 12, offset: int = 0) -> dict[str, Any]:
         job = self.database.one("SELECT kind, state, result_json FROM jobs WHERE id=?", (job_id,))
         if not job or job["kind"] != "recording_search":
@@ -608,8 +910,8 @@ class DesktopServices:
         payload = {
             "interval_id": bookmark_id,
             "channel_id": channel_id,
-            "start_ms": interval["resolved_start_ms"],
-            "end_ms": min(interval["resolved_end_ms"], interval["resolved_start_ms"] + 15_000),
+            "start_ms": max(0, interval["resolved_start_ms"] - 3_000),
+            "end_ms": interval["resolved_start_ms"] + 12_000,
         }
         with self.database.transaction() as db:
             db.execute(
@@ -658,8 +960,8 @@ class DesktopServices:
         payload = {
             "interval_id": bookmark_id,
             "channel_id": channel_id,
-            "start_ms": interval["resolved_start_ms"],
-            "end_ms": min(interval["resolved_end_ms"], interval["resolved_start_ms"] + 3_000),
+            "start_ms": max(0, interval["resolved_start_ms"] - 1_000),
+            "end_ms": interval["resolved_start_ms"] + 4_000,
         }
         with self.database.transaction() as db:
             db.execute(
@@ -1188,8 +1490,30 @@ class DesktopServices:
         timestamp = now_ms()
         source_id = stable_id("source", "nvr", nvr["id"])
         bookmark_ids: list[str] = []
-        requested_event_types = set(payload.get("event_types") or [])
+        requested_event_types = tuple(payload.get("event_types") or (
+            "motion", "video_tamper", "line_crossing", "region_intrusion",
+        ))
         self.database.execute("DELETE FROM search_results WHERE search_job_id=?", (job_id,))
+        channel_rows = [self._channel_row(channel_id) for channel_id in payload["channel_ids"]]
+        if any(channel["nvr_id"] != nvr["id"] for channel in channel_rows):
+            raise AppError("NVR_CHANNEL_SCOPE_INVALID", "A camera does not belong to this NVR.", 422)
+        channels_by_external_id = {
+            channel["external_channel_id"]: channel for channel in channel_rows
+        }
+        query = HistoricalEventQuery(
+            tuple(channels_by_external_id),
+            requested_event_types,
+            from_utc_millis(payload["from_ms"]),
+            from_utc_millis(payload["to_ms"]),
+        )
+        try:
+            event_result = adapter.search_historical_events(query)
+        except ValueError as exc:
+            raise AppError("EVENT_SEARCH_FILTER_INVALID", str(exc), 422) from exc
+        except HikvisionError as exc:
+            raise AppError(exc.code, "NVR historical event search failed.", 502) from exc
+        if self._cancel_requested(job_id):
+            raise AppError("JOB_CANCELLED", "Job was cancelled.", 409)
         with self.database.transaction() as db:
             db.execute(
                 """
@@ -1199,24 +1523,8 @@ class DesktopServices:
                 """,
                 (source_id, nvr["id"], nvr["firmware"], timestamp),
             )
-        for index, channel_id in enumerate(payload["channel_ids"]):
-            if self._cancel_requested(job_id):
-                raise AppError("JOB_CANCELLED", "Job was cancelled.", 409)
-            channel = self._channel_row(channel_id)
-            if not channel["primary_track_id"]:
-                raise AppError("CAPABILITY_PLAYBACK_TRACK_UNKNOWN", "Channel has no playback track identity.", 422)
-            query = RecordingQuery(
-                channel["external_channel_id"],
-                channel["primary_track_id"],
-                from_utc_millis(payload["from_ms"]),
-                from_utc_millis(payload["to_ms"]),
-            )
-            try:
-                spans = adapter.search_all_recordings(query)
-            except HikvisionError as exc:
-                raise AppError(exc.code, "NVR recording search failed.", 502) from exc
-            source_channel_id = stable_id("source_channel", source_id, channel["external_channel_id"])
-            with self.database.transaction() as db:
+            for channel in channel_rows:
+                source_channel_id = stable_id("source_channel", source_id, channel["external_channel_id"])
                 db.execute(
                     """
                     INSERT INTO source_channels(id, source_id, external_key, label, kind, nvr_channel_id, created_ms, updated_ms)
@@ -1229,23 +1537,22 @@ class DesktopServices:
                         source_id,
                         channel["external_channel_id"],
                         channel["alias"] or channel["device_name"],
-                        channel_id,
+                        channel["id"],
                         timestamp,
                         timestamp,
                     ),
                 )
-                for span in spans:
-                    canonical_event_type = _canonical_nvr_event_type(span.classification)
-                    if requested_event_types and canonical_event_type not in requested_event_types:
-                        continue
-                    start_ms = utc_millis(span.start_at)
-                    end_ms = utc_millis(span.end_at)
-                    source_event_id = span.source_id or hashlib.sha256(
-                        f"{channel_id}|{start_ms}|{end_ms}|{span.classification}".encode()
-                    ).hexdigest()[:24]
-                    interval_id = stable_id("interval", source_id, source_event_id)
-                    bookmark_ids.append(interval_id)
-                    db.execute(
+            for event in event_result.items:
+                channel = channels_by_external_id.get(event.external_channel_id)
+                if channel is None:
+                    continue
+                channel_id = channel["id"]
+                source_channel_id = stable_id("source_channel", source_id, event.external_channel_id)
+                start_ms = utc_millis(event.occurred_at)
+                end_ms = start_ms + 1_000
+                interval_id = stable_id("interval", source_id, event.source_id)
+                bookmark_ids.append(interval_id)
+                db.execute(
                         """
                         INSERT INTO intervals(
                             id, source_id, source_event_id, source_channel_id, nvr_channel_id,
@@ -1262,10 +1569,10 @@ class DesktopServices:
                         (
                             interval_id,
                             source_id,
-                            source_event_id,
+                            event.source_id,
                             source_channel_id,
                             channel_id,
-                            f"nvr.{canonical_event_type}",
+                            f"nvr.{event.event_type}",
                             start_ms,
                             end_ms,
                             start_ms,
@@ -1274,8 +1581,9 @@ class DesktopServices:
                             json.dumps(
                                 {
                                     "hikvision": {
-                                        "classification": span.classification,
-                                        "canonical_event_type": canonical_event_type,
+                                        "classification": event.classification,
+                                        "canonical_event_type": event.event_type,
+                                        "evidence_source": "historical_alarm_log",
                                         "area_name": payload.get("area_name") or None,
                                         "search_job_id": job_id,
                                     }
@@ -1284,34 +1592,20 @@ class DesktopServices:
                             timestamp,
                             timestamp,
                         ),
-                    )
-                    db.execute(
-                        "INSERT OR IGNORE INTO search_results(search_job_id, interval_id) VALUES (?, ?)",
-                        (job_id, interval_id),
-                    )
-                    db.execute(
-                        """
-                        INSERT OR REPLACE INTO recording_spans(
-                            id, nvr_channel_id, start_ms, end_ms, classification,
-                            locator_json, observed_ms, expires_ms
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            stable_id("recording", channel_id, source_event_id),
-                            channel_id,
-                            start_ms,
-                            end_ms,
-                            span.classification,
-                            json.dumps({"playback_locator": span.playback_locator}),
-                            timestamp,
-                            timestamp + 5 * 60 * 1000,
-                        ),
-                    )
-            self.database.execute(
-                "UPDATE jobs SET progress=?, updated_ms=? WHERE id=?",
-                ((index + 1) / len(payload["channel_ids"]), now_ms(), job_id),
-            )
-        return {"bookmark_ids": bookmark_ids, "count": len(bookmark_ids)}
+                )
+                db.execute(
+                    "INSERT OR IGNORE INTO search_results(search_job_id, interval_id) VALUES (?, ?)",
+                    (job_id, interval_id),
+                )
+        self.database.execute(
+            "UPDATE jobs SET progress=1, updated_ms=? WHERE id=?", (now_ms(), job_id)
+        )
+        return {
+            "bookmark_ids": bookmark_ids,
+            "count": len(bookmark_ids),
+            "truncated": event_result.truncated,
+            "evidence_source": "historical_alarm_log",
+        }
 
     def _run_event_preview(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         self.database.execute(
@@ -1604,6 +1898,12 @@ class DesktopServices:
             raise AppError("NVR_CHANNEL_NOT_FOUND", "NVR channel was not found.", 404)
         return row
 
+    def _trace_session_row(self, session_id: str) -> dict[str, Any]:
+        row = self.database.one("SELECT * FROM trace_sessions WHERE id=?", (session_id,))
+        if not row:
+            raise AppError("TRACE_SESSION_NOT_FOUND", "Trace session was not found.", 404)
+        return row
+
     @staticmethod
     def _store_capabilities(db: Any, nvr_id: str, capabilities: tuple[Any, ...]) -> None:
         for capability in capabilities:
@@ -1660,6 +1960,74 @@ class DesktopServices:
             "device_name": row["device_name"],
             "alias": row["alias"],
             "online": bool(row["online"]),
+        }
+
+    def _public_trace_session(self, row: dict[str, Any]) -> dict[str, Any]:
+        iterations: list[dict[str, Any]] = []
+        for iteration in self.database.all(
+            "SELECT * FROM trace_iterations WHERE session_id=? ORDER BY from_ms DESC, created_ms DESC",
+            (row["id"],),
+        ):
+            jobs = [
+                self._public_job(job)
+                for job in self.database.all(
+                    """
+                    SELECT j.* FROM trace_iteration_jobs tij
+                    JOIN jobs j ON j.id=tij.job_id
+                    WHERE tij.iteration_id=? ORDER BY j.created_ms, j.id
+                    """,
+                    (iteration["id"],),
+                )
+            ]
+            count = self.database.one(
+                """
+                SELECT COUNT(DISTINCT sr.interval_id) AS total
+                FROM trace_iteration_jobs tij
+                JOIN search_results sr ON sr.search_job_id=tij.job_id
+                WHERE tij.iteration_id=?
+                """,
+                (iteration["id"],),
+            )
+            states = {job["state"] for job in jobs}
+            if states.intersection({"queued", "running"}):
+                state = "running"
+            elif states == {"succeeded"}:
+                state = "succeeded"
+            elif states and states.issubset({"failed", "cancelled", "interrupted"}):
+                state = "failed"
+            else:
+                state = "partial"
+            iterations.append(
+                {
+                    "id": iteration["id"],
+                    "label": iteration["label"],
+                    "from": rfc3339(iteration["from_ms"]),
+                    "to": rfc3339(iteration["to_ms"]),
+                    "state": state,
+                    "result_count": int(count["total"] if count else 0),
+                    "jobs": jobs,
+                    "created_at": rfc3339(iteration["created_ms"]),
+                }
+            )
+        total = self.database.one(
+            """
+            SELECT COUNT(DISTINCT sr.interval_id) AS total
+            FROM trace_iterations ti
+            JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+            JOIN search_results sr ON sr.search_job_id=tij.job_id
+            WHERE ti.session_id=?
+            """,
+            (row["id"],),
+        )
+        return {
+            "id": row["id"],
+            "channel_ids": json.loads(row["channel_ids_json"]),
+            "event_types": json.loads(row["event_types_json"]),
+            "preset_id": row["preset_id"],
+            "iterations": iterations,
+            "result_count": int(total["total"] if total else 0),
+            "created_at": rfc3339(row["created_ms"]),
+            "updated_at": rfc3339(row["updated_ms"]),
         }
 
     @staticmethod

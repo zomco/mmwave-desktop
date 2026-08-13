@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from tracecue_hikvision import (
     AuthenticationError,
     HikvisionAdapter,
+    HistoricalEventQuery,
     HttpResponse,
     PaginationError,
     RecordingQuery,
@@ -132,10 +133,11 @@ class AdapterTests(unittest.TestCase):
         adapter.transport.responses[
             ("GET", "/ISAPI/Event/triggers/VMD-1")
         ] = fixture("event_trigger.xml")
-        for endpoint in (
-            "/ISAPI/Smart/LineDetection/101", "/ISAPI/Smart/FieldDetection/101"
-        ):
-            adapter.transport.responses[("GET", endpoint)] = UpstreamError("unsupported")
+        adapter.transport.responses[("GET", "/ISAPI/System/Video/inputs/channels/1/tamperDetection")] = UpstreamError("unsupported")
+        adapter.transport.responses[("GET", "/ISAPI/Smart/LineDetection/1")] = fixture("line_detection.xml")
+        adapter.transport.responses[("GET", "/ISAPI/Smart/FieldDetection/1")] = fixture("field_detection.xml")
+        for trigger in ("linedetection-1", "fielddetection-1"):
+            adapter.transport.responses[("GET", f"/ISAPI/Event/triggers/{trigger}")] = UpstreamError("unsupported")
 
         report = adapter.inspect_event_settings(adapter.list_channels()[:1])
 
@@ -150,6 +152,32 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(5, len(motion.overlays[0].active_cells))
         self.assertEqual(1, motion.schedule_block_count)
         self.assertNotIn("beginTime", repr(motion))
+        line = next(item for item in report.rules if item.event_type == "line_crossing")
+        intrusion = next(item for item in report.rules if item.event_type == "region_intrusion")
+        self.assertEqual("line", line.overlays[0].kind)
+        self.assertEqual(1, len(line.overlays))
+        self.assertEqual(2, len(intrusion.overlays))
+        requested_paths = {path for _, path, _ in adapter.transport.requests}
+        self.assertIn("/ISAPI/Smart/LineDetection/1", requested_paths)
+        self.assertNotIn("/ISAPI/Smart/LineDetection/101", requested_paths)
+
+    def test_historical_event_search_reads_alarm_logs_and_filters_channel_and_class(self) -> None:
+        adapter = self.adapter()
+        adapter.transport.responses[("POST", "/ISAPI/ContentMgmt/logSearch")] = fixture("event_log_page.xml")
+
+        result = adapter.search_historical_events(
+            HistoricalEventQuery(("1",), ("line_crossing",), NOW, NOW.replace(minute=1))
+        )
+
+        self.assertFalse(result.truncated)
+        self.assertEqual(1, len(result.items))
+        self.assertEqual("line_crossing", result.items[0].event_type)
+        self.assertEqual("1", result.items[0].external_channel_id)
+        self.assertNotIn("must-not-leak", repr(result))
+        body = adapter.transport.requests[-1][2]
+        assert body is not None
+        self.assertIn(b"<metaId>log.hikvision.com/Alarm/lineDetectionStart/1</metaId>", body)
+        self.assertNotIn(b"trackID", body)
 
     def test_search_parses_spans_and_explicit_gap(self) -> None:
         adapter = self.adapter(fixture("search_page.xml"))
