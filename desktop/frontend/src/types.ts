@@ -65,6 +65,8 @@ export interface Bookmark {
       canonical_event_type?: string;
       area_name?: string | null;
       search_job_id?: string;
+      event_duration_ms?: number | null;
+      duration_source?: "paired_alarm_log" | "unknown";
     };
     [key: string]: unknown;
   };
@@ -99,8 +101,11 @@ export interface TraceSession {
 
 export interface TraceDensityBucket {
   start_at: string;
+  end_at: string;
   count: number;
 }
+
+export type DurationClass = "unknown" | "under_5s" | "5_to_30s" | "over_30s";
 
 export interface TraceSessionResults {
   session_id: string;
@@ -108,9 +113,12 @@ export interface TraceSessionResults {
   total: number;
   counts: Record<ReviewState, number>;
   density: TraceDensityBucket[];
+  duration_buckets: Record<DurationClass, number>;
+  event_type_counts: Record<string, number>;
   limit: number;
   offset: number;
   has_more: boolean;
+  summary_only: boolean;
 }
 
 export interface AppSettings {
@@ -201,6 +209,7 @@ export interface ClipOrigin {
   classification: string | null;
   event_window: { start_at: string; end_at: string };
   candidate_window_capped: boolean;
+  time_basis?: "nvr_index";
 }
 
 export interface Clip {

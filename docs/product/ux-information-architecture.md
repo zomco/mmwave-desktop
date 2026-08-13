@@ -6,13 +6,12 @@
 
 ```text
 Event search
-├─ Persistent Trace session and recent-search restoration
-├─ Exact time plus configurable overnight, previous/next-night and three-night controls
-├─ NVR-grouped camera snapshots as the target-area selector
-├─ User-facing behavior filters
+├─ Required exact time, one visual camera and one or more behavior types
+├─ NVR-grouped camera snapshots as a single-choice target-area selector
 ├─ Saved filters
-├─ Cumulative, stable-ID-deduplicated results with hourly density navigation
-├─ Paged automatic preview gallery with hover motion and durable review state
+├─ Summary-only first pass with hourly density, duration and event-type facets
+├─ Paged preview gallery only after a secondary facet is chosen
+├─ Hover motion and durable reviewed/excluded state
 └─ Generate candidate clip
 
 Device center
@@ -23,7 +22,7 @@ Device center
 
 Candidates and exports
 ├─ Browser playback and MP4 download
-└─ Search, area, camera and event provenance
+└─ NVR-indexed event/clip time, camera and search provenance
 
 Settings
 └─ Local overnight start/end hours

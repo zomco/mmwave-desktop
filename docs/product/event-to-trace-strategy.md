@@ -4,7 +4,7 @@
 
 ## Product decision
 
-For the NVR-first release, a **target area** is the set of camera views the user selects visually, grouped by recorder and stored as stable TraceCue camera IDs. A free-text area label is not a search predicate and is no longer shown. A saved filter contains the camera set and optional normalized event types and can be loaded for a later time window. A persistent Trace session holds that fixed scope while the user iterates across uncertain time windows such as last night, the previous night or the surrounding three nights. Results accumulate with stable-ID deduplication; unreviewed, reviewed, excluded and candidate state survives restart. Search results retain the NVR's raw classification privately while presenting a localized behavior name, event time, camera and search-session identity. The first page automatically loads cached JPEG previews; hovering lazily loads a cached three-second WebP preview. Users can use hourly event-density navigation, promote useful results to candidate clips, then download the confirmed MP4. This release intentionally does not accept natural-language search input.
+For the NVR-first release, a **target area** is one camera view selected visually from NVR-grouped images and stored as a stable TraceCue camera ID. One camera per query bounds NVR and preview work and matches how users identify a place. A free-text area label is not a search predicate. A saved filter contains that camera and one or more required normalized event types. Each Trace search has one bounded time window; changing the time creates a new search rather than accumulating a hidden multi-night session. The first pass returns statistics only: hourly event density, paired alarm duration buckets and event-type composition. Event cards and cached JPEG/WebP media are requested only after the user explicitly selects a secondary statistic or chooses all events. Review state remains durable, and confirmed results become candidate MP4 files. This release intentionally does not accept natural-language search input.
 
 This is the recommended practical scheme for current Hikvision NVRs. It is useful without pretending that coarse recording metadata contains a precise physical trajectory.
 
@@ -26,11 +26,11 @@ ONVIF publishes the relevant standard operations in its [operation index](https:
 1. Device center discovers candidates and verifies one with user credentials.
 2. Channel aliases give stable cameras business meaning such as “north entrance.”
 3. The read-only audit separates ordinary `motion`/`video_tamper` from Smart `line_crossing`/`region_intrusion`, records enable/trigger-link state and draws bounded grid/polygon/line overlays when returned. Selecting a Smart type retains only cameras with supported capability evidence.
-4. Event search submits a bounded time, a visual camera set spanning one or more NVRs, and optional normalized event types. It reads historical alarm logs; continuous recording files are excluded as event candidates.
+4. Event search submits a bounded time, exactly one visual camera and at least one normalized event type. It reads historical alarm logs; continuous recording files are excluded as event candidates.
 5. TraceCue preserves the raw alarm-log `metaId` in safe evidence while mapping it to localized `motion`, `video_tamper`, `line_crossing` or `region_intrusion` presentation. Vague “other Smart event” and continuous-recording filters are not exposed.
-6. If the target is not found, the same session adds adjacent overnight windows; results are accumulated and deduplicated, and review state narrows the remaining work.
-7. Paged results automatically generate cached atomic JPEG previews; hover generates a bounded three-second animated WebP; confirmed results generate candidate MP4 files.
-8. The MP4 record retains safe search/event provenance so export history remains understandable.
+6. Start/stop alarm-log entries are paired when possible. Unknown durations remain explicitly unknown; they are never represented as synthetic one-second events in the UI.
+7. A summary-only response exposes hourly density, duration and event-type facets. Only after a secondary choice does a six-item page generate cached atomic JPEG previews; hover generates a bounded three-second animated WebP.
+8. Confirmed results generate candidate MP4 files whose playback locators are rebound to the resolved requested media span. Public times remain NVR-indexed; camera OSD watermarks may differ when camera and NVR clocks are not synchronized.
 
 ## Evidence boundary
 

@@ -34,15 +34,17 @@ desktop service from the repository:
 
 ```powershell
 .\packaging\windows\fetch-ffmpeg.ps1
-$env:TRACECUE_FRONTEND_DIR = (Resolve-Path .\desktop\frontend\dist).Path
 tracecue-desktop
 ```
 
-On Windows, an editable checkout automatically discovers the verified binaries
-under `packaging/windows/tools/`. `TRACECUE_FFMPEG_PATH` and
+On Windows, an editable checkout automatically discovers the built SPA under
+`desktop/frontend/dist` and the verified binaries under
+`packaging/windows/tools/`. Build the SPA before launching the service.
+`TRACECUE_FRONTEND_DIR` remains available for a nonstandard frontend layout;
+`TRACECUE_FFMPEG_PATH` and
 `TRACECUE_FFPROBE_PATH` may be set to explicit executable paths when a different
 development layout is required. Packaged builds continue to use their adjacent
-`tools/` directory.
+`frontend/` and `tools/` directories.
 
 Then read, in order:
 

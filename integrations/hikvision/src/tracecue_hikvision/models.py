@@ -108,6 +108,7 @@ class HistoricalEvent:
     occurred_at: datetime
     classification: str
     source_id: str
+    ended_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,12 +125,23 @@ class Page:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedMediaSegment:
+    start_at: datetime
+    end_at: datetime
+    playback_locator: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class MediaResolution:
     requested_start_at: datetime
     requested_end_at: datetime
     covered_spans: tuple[tuple[datetime, datetime], ...]
     missing_spans: tuple[tuple[datetime, datetime], ...]
-    playback_locators: tuple[str, ...] = field(repr=False)
+    playback_segments: tuple[ResolvedMediaSegment, ...] = field(repr=False)
+
+    @property
+    def playback_locators(self) -> tuple[str, ...]:
+        return tuple(segment.playback_locator for segment in self.playback_segments)
 
     @property
     def complete(self) -> bool:

@@ -42,3 +42,5 @@ Schema v2 新增历史筛选/检索结果、只读 NVR 事件审计证据、事�
 Schema v5 新增本地 Trace 会话、有界检索迭代、迭代与作业关联及逐会话事件审阅状态。它只保存稳定本地 ID、归一化事件标签和 UTC 毫秒，不保存 NVR 凭据、Authorization header 或回放 locator。已有检索与派生媒体不变。设置记录增加仅用于构造浏览器夜间时间窗的本机 `night_start_hour` 和 `night_end_hour` 默认值。
 
 2026-08-13 事件检索兼容更新不改变 SQLite schema。新检索使用有界历史报警日志，不再把连续录像文件当作事件。请求校验现在只接受 `motion`、`video_tamper`、`line_crossing`、`region_intrusion`；旧会话/筛选中的 `continuous` 或兜底 `smart` 标签为审计历史继续保留，但浏览器在复用前会丢弃。缓存事件审计 JSON 升级为 schema `2` 并进行一次只读刷新，使 Smart 规则端点使用摄像机外部通道 ID，而不是码流 track ID。已有 Interval、Clip 与 NVR 媒体均不改变。
+
+2026-08-14 单摄像机/两阶段检索更新同样保持 SQLite schema v5。新的检索与历史筛选请求要求恰好一个摄像机和至少一种规范事件类型。新 Trace 会话只接受一个不同时间窗；旧多迭代会话继续可读，但浏览器不再恢复。结果摘要增加密度、时长和事件类型构成，且不会加载事件媒体。新历史事件会配对报警开始/停止日志，并把时长证据写入 `attributes_json`；已有一秒索引行不会被改写，在新检索重新观测前显示“时长未知”。事件审计 JSON 升级为 schema `4` 并只读刷新，以修正有实证的 LineDetection 与 FieldDetection 坐标。新 Clip 会把设备返回的回放 locator 重新限制到已解析请求片段，并把公开时间标注为 NVR 索引时间；已有 Clip 和 NVR 原始录像均不改变。

@@ -287,6 +287,13 @@ def create_app(
         ),
         from_at: str | None = Query(default=None, alias="from"),
         to_at: str | None = Query(default=None, alias="to"),
+        duration_class: str | None = Query(
+            default=None, pattern="^(unknown|under_5s|5_to_30s|over_30s)$"
+        ),
+        event_type: str | None = Query(
+            default=None, pattern="^(motion|video_tamper|line_crossing|region_intrusion)$"
+        ),
+        summary_only: bool = Query(default=False),
     ) -> dict:
         return application_services.trace_session_results(
             session_id,
@@ -295,6 +302,9 @@ def create_app(
             review_state=review_state,
             from_at=from_at,
             to_at=to_at,
+            duration_class=duration_class,
+            event_type=event_type,
+            summary_only=summary_only,
         )
 
     @app.patch(api + "/trace-sessions/{session_id}/events/{bookmark_id}")

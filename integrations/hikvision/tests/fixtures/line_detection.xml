@@ -2,8 +2,8 @@
 <LineDetection xmlns="http://www.hikvision.com/ver20/XMLSchema">
   <enabled>true</enabled>
   <LineItemList><LineItem><id>1</id><CoordinatesList>
-    <Coordinates><positionX>200</positionX><positionY>500</positionY></Coordinates>
-    <Coordinates><positionX>800</positionX><positionY>500</positionY></Coordinates>
+    <Coordinates><positionX>200</positionX><positionY>200</positionY></Coordinates>
+    <Coordinates><positionX>800</positionX><positionY>700</positionY></Coordinates>
   </CoordinatesList></LineItem>
   <LineItem><id>2</id><CoordinatesList>
     <Coordinates><positionX>0</positionX><positionY>1000</positionY></Coordinates>

@@ -16,6 +16,7 @@ from tracecue_hikvision import (
     UnsafePayloadError,
     UpstreamError,
     playback_locator_for_device_time,
+    playback_locator_for_window,
 )
 
 
@@ -156,7 +157,9 @@ class AdapterTests(unittest.TestCase):
         intrusion = next(item for item in report.rules if item.event_type == "region_intrusion")
         self.assertEqual("line", line.overlays[0].kind)
         self.assertEqual(1, len(line.overlays))
+        self.assertEqual(((200, 800), (800, 300)), line.overlays[0].points)
         self.assertEqual(2, len(intrusion.overlays))
+        self.assertEqual(((100, 900), (400, 900), (400, 600)), intrusion.overlays[0].points)
         requested_paths = {path for _, path, _ in adapter.transport.requests}
         self.assertIn("/ISAPI/Smart/LineDetection/1", requested_paths)
         self.assertNotIn("/ISAPI/Smart/LineDetection/101", requested_paths)
@@ -173,11 +176,12 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(1, len(result.items))
         self.assertEqual("line_crossing", result.items[0].event_type)
         self.assertEqual("1", result.items[0].external_channel_id)
+        self.assertEqual(NOW.replace(second=7), result.items[0].ended_at)
         self.assertNotIn("must-not-leak", repr(result))
-        body = adapter.transport.requests[-1][2]
-        assert body is not None
-        self.assertIn(b"<metaId>log.hikvision.com/Alarm/lineDetectionStart/1</metaId>", body)
-        self.assertNotIn(b"trackID", body)
+        bodies = [body for _, _, body in adapter.transport.requests if body is not None]
+        self.assertTrue(any(b"lineDetectionStart/1" in body for body in bodies))
+        self.assertTrue(any(b"lineDetectionStop/1" in body for body in bodies))
+        self.assertTrue(all(b"trackID" not in body for body in bodies))
 
     def test_search_parses_spans_and_explicit_gap(self) -> None:
         adapter = self.adapter(fixture("search_page.xml"))
@@ -240,6 +244,18 @@ class AdapterTests(unittest.TestCase):
         self.assertIn("starttime=20260813T093800Z", translated)
         self.assertIn("endtime=20260813T093830Z", translated)
         self.assertIn("name=fixture", translated)
+
+    def test_bounds_broad_playback_locator_before_device_time_translation(self) -> None:
+        locator = "rtsp://192.0.2.10/Streaming/tracks/101?starttime=20260813T010000Z&endtime=20260813T020000Z"
+
+        bounded = playback_locator_for_window(
+            locator,
+            datetime(2026, 8, 13, 1, 38, 5, tzinfo=timezone.utc),
+            datetime(2026, 8, 13, 1, 38, 29, tzinfo=timezone.utc),
+        )
+
+        self.assertIn("starttime=20260813T013805Z", bounded)
+        self.assertIn("endtime=20260813T013829Z", bounded)
 
     def test_pagination_detects_non_progressing_page(self) -> None:
         content = fixture("search_page.xml").replace(b"NO MORE MATCHES", b"MORE MATCHES   ")

@@ -33,14 +33,14 @@ npm run build --prefix desktop/frontend
 
 ```powershell
 .\packaging\windows\fetch-ffmpeg.ps1
-$env:TRACECUE_FRONTEND_DIR = (Resolve-Path .\desktop\frontend\dist).Path
 tracecue-desktop
 ```
 
-Windows 下，可编辑检出会自动发现 `packaging/windows/tools/` 中已经校验的二进制。
-若开发目录布局不同，可通过 `TRACECUE_FFMPEG_PATH` 和
-`TRACECUE_FFPROBE_PATH` 指定可执行文件的完整路径；打包版本仍使用程序相邻的
-`tools/` 目录。
+Windows 下，可编辑检出会自动发现 `desktop/frontend/dist` 中已构建的 SPA，
+以及 `packaging/windows/tools/` 中已经校验的二进制；启动服务前需要先构建 SPA。
+非标准前端目录可以通过 `TRACECUE_FRONTEND_DIR` 指定，媒体工具也可以通过
+`TRACECUE_FFMPEG_PATH` 和 `TRACECUE_FFPROBE_PATH` 指定完整路径；打包版本仍使用
+程序相邻的 `frontend/` 和 `tools/` 目录。
 
 然后按顺序阅读：
 

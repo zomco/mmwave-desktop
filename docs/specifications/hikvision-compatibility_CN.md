@@ -31,7 +31,7 @@
 
 TraceCue 不再分发或逆向海康私有 SADP 实现。它先发送标准 ONVIF WS-Discovery 探针，再在本机直连私有 `/24` 网段执行有界、未认证的 ISAPI 候选探测。这样能提供类似 SADP 的添加列表，但不能承诺 SADP 在所有网卡/VLAN 上的二层可达性。海康官方支持页说明 SADP 在 2026 年 4 月后停止维护，并建议迁移到 HiTools Delivery：[官方工具通知](https://display.hikvision.com/en/support/tools/hitools/clc14d7e1a69a237dd/)。
 
-事件审计按摄像机外部通道 ID 读取移动侦测/遮挡报警普通事件、越界/区域入侵 Smart 事件及 trigger-link 资源。`101` 一类码流 track ID 不能替代 Smart 规则通道 ID。解析器把有界移动栅格和坐标列表转换为安全的栅格/多边形/越界线覆盖层；设备可以返回多个入侵区域。端点被拒绝或不存在时，按该型号/固件记录为 degraded/unknown；选择 Smart 类型时，界面隐藏缺少该能力证据的摄像机。ONVIF 定义了 `GetEventProperties`、`PullMessages`、`GetRules`、`GetSupportedRules` 等标准事件/分析操作，但仍须逐设备实测：[ONVIF operation index](https://www.onvif.org/onvif/ver20/util/operationIndex.html)。实时订阅无法重建 TraceCue 关闭期间错过的通知。
+事件审计按摄像机外部通道 ID 读取移动侦测/遮挡报警普通事件、越界/区域入侵 Smart 事件及 trigger-link 资源。`101` 一类码流 track ID 不能替代 Smart 规则通道 ID。解析器把有界移动栅格和坐标列表转换为安全的栅格/多边形/越界线覆盖层；设备可以返回多个入侵区域。在有实证的 4.30 固件中，LineDetection 与 FieldDetection 纵坐标都以画面底边为原点。审计 schema 4 对两者应用 `y_display = 1000 - y_device`。端点被拒绝或不存在时，按该型号/固件记录为 degraded/unknown；选择 Smart 类型时，界面隐藏缺少该能力证据的摄像机。ONVIF 定义了 `GetEventProperties`、`PullMessages`、`GetRules`、`GetSupportedRules` 等标准事件/分析操作，但仍须逐设备实测：[ONVIF operation index](https://www.onvif.org/onvif/ver20/util/operationIndex.html)。实时订阅无法重建 TraceCue 关闭期间错过的通知。
 
 ## 通道身份
 
@@ -50,11 +50,11 @@ TraceCue 不再分发或逆向海康私有 SADP 实现。它先发送标准 ONVI
   自定义 RTSP 端口保持不变；
 - 限制响应大小、XML 深度、请求并发和超时。
 
-海康文档使用 `.../Streaming/channels/<channel><stream>` 表示实时主/子码流，并使用紧凑 `starttime`/`endtime` 回放 URL。实测部分固件会把带 `Z` 后缀的紧凑回放参数按设备本地墙上时间解释。TraceCue 继续用 UTC 保存 Interval，只在 FFmpeg locator 边界应用设备实测 UTC 偏移；这属于逐固件行为，不是通用时区规则：[海康 RTSP URL 说明](https://www.hikvision.com/content/dam/hikvision/ca/bulletin/technical-bulletin/technical-article/tb_rtsp_and_http_urls_120915us.pdf)、[海康 ISAPI 搜索/下载示例](https://www.hikvisioneurope.com/eu/portal/portal/Technology%20Partner%20Program/03-How%20to/How%20to%20search%20and%20download%20the%20video%20file%20from%20NVR%20via%20ISAPI.pdf)。
+海康文档使用 `.../Streaming/channels/<channel><stream>` 表示实时主/子码流，并使用紧凑 `starttime`/`endtime` 回放 URL。TraceCue 在调用 FFmpeg 前，会把录像检索返回的宽边界替换为实际解析出的请求片段。实测部分固件会把带 `Z` 后缀的紧凑回放参数按设备本地墙上时间解释；TraceCue 随后只在此 locator 边界应用设备实测 UTC 偏移，内部/公开 Interval 时间继续使用 UTC。画面 OSD 水印由摄像机时钟生成；IPC 时间同步不健康时仍可能与 NVR 事件索引不同。这属于逐固件行为，不是通用时区规则：[海康 RTSP URL 说明](https://www.hikvision.com/content/dam/hikvision/ca/bulletin/technical-bulletin/technical-article/tb_rtsp_and_http_urls_120915us.pdf)、[海康 ISAPI 搜索/下载示例](https://www.hikvisioneurope.com/eu/portal/portal/Technology%20Partner%20Program/03-How%20to/How%20to%20search%20and%20download%20the%20video%20file%20from%20NVR%20via%20ISAPI.pdf)。
 
 ## 经授权硬件观测（2026-08-13）
 
-`DS-7808NB-K1/8P` 固件 `V4.30.090` 返回 8 个在线通道及主/子 track 身份，录像检索/回放、历史报警日志和事件配置均可认证读取。移动侦测使用 `18 × 22` 十六进制 grid map。`/ISAPI/Smart/LineDetection/1` 与 `/ISAPI/Smart/FieldDetection/1` 可读且已启用；区域入侵返回 4 组坐标，而原先错误调用的 `.../101` 正是集成缺陷。同一实测报警窗口返回移动事件、768 条有界越界事件（仍有更多）和 411 条区域入侵事件；录像检索却只返回 `timing` 连续文件。已保存账号访问两个 RTSP 实时路径和 HTTP preview 路径时均返回 403，但录像检索/回放仍获授权；有界最近录像回退可生成摄像机识别 JPEG，缓存预览与 H.264 导出路径也经过硬件验证。精确逐帧 seek、日志保留期与结果截断仍是后续需要量化的固件行为。仓库未保存客户画面、地址、序列号、原始日志正文或凭据。
+`DS-7808NB-K1/8P` 固件 `V4.30.090` 返回 8 个在线通道及主/子 track 身份，录像检索/回放、历史报警日志和事件配置均可认证读取。移动侦测使用 `18 × 22` 十六进制 grid map。`/ISAPI/Smart/LineDetection/1` 与 `/ISAPI/Smart/FieldDetection/1` 可读且已启用；当前启用的区域入侵使用底边原点纵坐标，而原先错误调用的 `.../101` 正是集成缺陷。通道 2 的有界越界实测在 `21:55:47Z` 返回 `lineDetectionStart`、在 `21:55:56Z` 返回 `lineDetectionStop`，证明事件时长为 9 秒。录像检索返回精确请求 UTC 范围及匹配的回放参数。导出画面 OSD 比 NVR 索引时间领先约 4 分 12 秒，由此排除 TraceCue 八小时时区转换错误，定位为摄像机/NVR 时钟未同步。已保存账号访问两个 RTSP 实时路径和 HTTP preview 路径时均返回 403，但录像检索/回放仍获授权；有界最近录像回退可生成摄像机识别 JPEG，缓存预览与 H.264 导出路径也经过硬件验证。日志保留期与结果截断仍是后续需要量化的固件行为。仓库未保存客户画面、地址、序列号、原始日志正文或凭据。
 
 ## 兼容记录
 

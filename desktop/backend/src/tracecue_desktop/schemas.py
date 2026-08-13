@@ -43,14 +43,14 @@ class ChannelPatchRequest(ApiModel):
 
 class SearchRequest(ApiModel):
     nvr_id: str
-    channel_ids: list[str]
+    channel_ids: list[str] = Field(min_length=1, max_length=1)
     from_at: str = Field(alias="from")
     to_at: str = Field(alias="to")
     source_modes: list[Literal["historical_event_log", "record_classification"]] = Field(
         default_factory=lambda: ["historical_event_log"], max_length=1
     )
     area_name: str | None = Field(default=None, max_length=200)
-    event_types: list[EventType] = Field(default_factory=list, max_length=4)
+    event_types: list[EventType] = Field(min_length=1, max_length=4)
     preset_id: str | None = None
 
 
@@ -58,13 +58,13 @@ class SearchPresetRequest(ApiModel):
     name: str = Field(min_length=1, max_length=200)
     nvr_id: str | None = None
     area_name: str = Field(default="", max_length=200)
-    channel_ids: list[str] = Field(min_length=1, max_length=64)
-    event_types: list[EventType] = Field(default_factory=list, max_length=4)
+    channel_ids: list[str] = Field(min_length=1, max_length=1)
+    event_types: list[EventType] = Field(min_length=1, max_length=4)
 
 
 class TraceSessionRequest(ApiModel):
-    channel_ids: list[str] = Field(min_length=1, max_length=64)
-    event_types: list[EventType] = Field(default_factory=list, max_length=4)
+    channel_ids: list[str] = Field(min_length=1, max_length=1)
+    event_types: list[EventType] = Field(min_length=1, max_length=4)
     preset_id: str | None = None
 
 

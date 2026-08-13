@@ -75,6 +75,7 @@ class FakeAdapter:
                     NOW,
                     "log.hikvision.com/Alarm/motionStart/1",
                     "fixture-event-1",
+                    NOW.replace(second=9),
                 ),
             )
         return HistoricalEventResult(items)
@@ -108,7 +109,9 @@ class FakeMediaRunner:
         max_duration_seconds, cancel_requested
     ):
         assert password == "secret-password"
-        assert playback_locators == ("rtsp://192.0.2.10/fixture",)
+        assert len(playback_locators) == 1
+        assert playback_locators[0].startswith("rtsp://192.0.2.10/fixture?")
+        assert "starttime=" in playback_locators[0] and "endtime=" in playback_locators[0]
         assert max_duration_seconds > 0
         assert not cancel_requested()
         output = self.clip_root / f"{clip_id}.mp4"
@@ -119,7 +122,7 @@ class FakeMediaRunner:
         self, *, preview_id, playback_locator, username, password, cancel_requested
     ):
         assert password == "secret-password"
-        assert playback_locator == "rtsp://192.0.2.10/fixture"
+        assert playback_locator.startswith("rtsp://192.0.2.10/fixture?")
         output = self.clip_root / "previews" / f"{preview_id}.jpg"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"\xff\xd8\xfffixture-preview")
@@ -139,7 +142,7 @@ class FakeMediaRunner:
         self, *, animation_id, playback_locator, username, password,
         duration_seconds, cancel_requested
     ):
-        assert playback_locator == "rtsp://192.0.2.10/fixture"
+        assert playback_locator.startswith("rtsp://192.0.2.10/fixture?")
         assert duration_seconds == 3
         output = self.clip_root / "animations" / f"{animation_id}.webp"
         output.parent.mkdir(parents=True, exist_ok=True)

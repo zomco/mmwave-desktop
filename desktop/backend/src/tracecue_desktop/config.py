@@ -39,9 +39,7 @@ class AppConfig:
             clip_dir = data_dir / "clips"
         data_dir = Path(os.environ.get("TRACECUE_DATA_DIR", data_dir))
         clip_dir = Path(os.environ.get("TRACECUE_CLIP_DIR", clip_dir))
-        frontend_override = os.environ.get("TRACECUE_FRONTEND_DIR")
-        bundled_frontend = executable_dir / "frontend"
-        frontend_dir = Path(frontend_override) if frontend_override else (bundled_frontend if bundled_frontend.exists() else None)
+        frontend_dir = _frontend_path(executable_dir)
         ffmpeg = _media_tool_path("ffmpeg", executable_dir)
         ffprobe = _media_tool_path("ffprobe", executable_dir)
         return cls(
@@ -71,3 +69,20 @@ def _media_tool_path(name: str, executable_dir: Path) -> Path:
         repository_root = Path(__file__).resolve().parents[4]
         candidates.append(repository_root / "packaging" / "windows" / "tools" / executable_name)
     return next((candidate for candidate in candidates if candidate.is_file()), Path(name))
+
+
+def _frontend_path(executable_dir: Path, module_file: Path | None = None) -> Path | None:
+    """Resolve an override, packaged SPA, or editable-checkout SPA build."""
+    override = os.environ.get("TRACECUE_FRONTEND_DIR")
+    if override:
+        return Path(override)
+
+    module_path = (module_file or Path(__file__)).resolve()
+    candidates = [executable_dir / "frontend"]
+    if len(module_path.parents) > 4:
+        repository_root = module_path.parents[4]
+        candidates.append(repository_root / "desktop" / "frontend" / "dist")
+    return next(
+        (candidate for candidate in candidates if (candidate / "index.html").is_file()),
+        None,
+    )

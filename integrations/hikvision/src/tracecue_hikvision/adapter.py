@@ -25,6 +25,7 @@ from .models import (
     Page,
     RecordingQuery,
     RecordingSpan,
+    ResolvedMediaSegment,
     RuleOverlay,
 )
 from .transport import HttpResponse, Transport
@@ -39,13 +40,15 @@ RECORD_SEARCH = "/ISAPI/ContentMgmt/search"
 LOG_SEARCH = "/ISAPI/ContentMgmt/logSearch"
 _OFFSET = re.compile(r"(?:Z|[+-][0-9]{2}:[0-9]{2})$")
 _EVENT_LOG_CLASSES = {
-    "motion": "motionStart",
-    "video_tamper": "hideStart",
-    "line_crossing": "lineDetectionStart",
-    "region_intrusion": "fieldDetectionStart",
+    "motion": ("motionStart", "motionStop"),
+    "video_tamper": ("hideStart", "hideStop"),
+    "line_crossing": ("lineDetectionStart", "lineDetectionStop"),
+    "region_intrusion": ("fieldDetectionStart", "fieldDetectionStop"),
 }
 _EVENT_LOG_CLASS_LOOKUP = {
-    value.lower(): key for key, value in _EVENT_LOG_CLASSES.items()
+    event_class.lower(): (event_type, phase)
+    for event_type, classes in _EVENT_LOG_CLASSES.items()
+    for event_class, phase in zip(classes, ("start", "stop"))
 }
 
 
@@ -205,48 +208,83 @@ class HikvisionAdapter:
         probe_channel = query.external_channel_ids[0]
         if not re.fullmatch(r"[0-9A-Za-z._-]{1,64}", probe_channel):
             raise UnsafePayloadError("NVR channel identity is unsafe for event log search")
-        result: list[HistoricalEvent] = []
+        markers: list[tuple[HistoricalEvent, str]] = []
         seen: set[str] = set()
         truncated = False
         for event_type in requested_types:
-            position = 0
-            for _ in range(maximum_pages_per_type):
-                body = self._event_log_search_body(query, event_type, probe_channel, position)
-                response = self.transport.request(
-                    "POST",
-                    LOG_SEARCH,
-                    body=body,
-                    headers={"Content-Type": "application/xml; charset=utf-8"},
+            for event_class in _EVENT_LOG_CLASSES[event_type]:
+                phase = "start" if event_class.lower().endswith("start") else "stop"
+                position = 0
+                for _ in range(maximum_pages_per_type):
+                    body = self._event_log_search_body(
+                        query, event_class, probe_channel, position, include_stop_lookahead=phase == "stop"
+                    )
+                    response = self.transport.request(
+                        "POST",
+                        LOG_SEARCH,
+                        body=body,
+                        headers={"Content-Type": "application/xml; charset=utf-8"},
+                    )
+                    root = parse_xml(response.body)
+                    status = " ".join((text(root, "responseStatusStrg") or "").upper().split())
+                    matches = children(root, "searchMatchItem")
+                    for item in matches:
+                        parsed = self._parse_historical_event(item, selected_channels)
+                        if parsed is None:
+                            continue
+                        event, parsed_phase = parsed
+                        upper_bound = query.end_at + (timedelta(hours=1) if parsed_phase == "stop" else timedelta())
+                        if (
+                            event.event_type != event_type
+                            or event.occurred_at < query.start_at
+                            or event.occurred_at >= upper_bound
+                            or event.source_id in seen
+                        ):
+                            continue
+                        seen.add(event.source_id)
+                        markers.append((event, parsed_phase))
+                    if "MORE" not in status:
+                        break
+                    if not matches:
+                        raise PaginationError("NVR event log search did not advance")
+                    position += len(matches)
+                else:
+                    truncated = True
+
+        pending: dict[tuple[str, str], list[HistoricalEvent]] = {}
+        paired: list[HistoricalEvent] = []
+        for marker, phase in sorted(markers, key=lambda value: value[0].occurred_at):
+            key = (marker.external_channel_id, marker.event_type)
+            if phase == "start":
+                if marker.occurred_at < query.end_at:
+                    pending.setdefault(key, []).append(marker)
+                continue
+            starts = pending.get(key, [])
+            while starts and marker.occurred_at - starts[0].occurred_at > timedelta(hours=1):
+                paired.append(starts.pop(0))
+            if starts and marker.occurred_at > starts[0].occurred_at:
+                start = starts.pop(0)
+                paired.append(
+                    HistoricalEvent(
+                        start.external_channel_id,
+                        start.event_type,
+                        start.occurred_at,
+                        start.classification,
+                        start.source_id,
+                        marker.occurred_at,
+                    )
                 )
-                root = parse_xml(response.body)
-                status = " ".join((text(root, "responseStatusStrg") or "").upper().split())
-                matches = children(root, "searchMatchItem")
-                for item in matches:
-                    parsed = self._parse_historical_event(item, selected_channels)
-                    if (
-                        parsed is None
-                        or parsed.event_type != event_type
-                        or parsed.occurred_at < query.start_at
-                        or parsed.occurred_at >= query.end_at
-                        or parsed.source_id in seen
-                    ):
-                        continue
-                    seen.add(parsed.source_id)
-                    result.append(parsed)
-                    if len(result) >= maximum_results:
-                        truncated = "MORE" in status or len(matches) > 0
-                        return HistoricalEventResult(tuple(sorted(result, key=lambda event: event.occurred_at)), truncated)
-                if "MORE" not in status:
-                    break
-                if not matches:
-                    raise PaginationError("NVR event log search did not advance")
-                position += len(matches)
-            else:
-                truncated = True
-        return HistoricalEventResult(tuple(sorted(result, key=lambda event: event.occurred_at)), truncated)
+        for starts in pending.values():
+            paired.extend(starts)
+        paired.sort(key=lambda event: event.occurred_at)
+        if len(paired) > maximum_results:
+            return HistoricalEventResult(tuple(paired[:maximum_results]), True)
+        return HistoricalEventResult(tuple(paired), truncated)
 
     @staticmethod
-    def _parse_historical_event(item, selected_channels: set[str]) -> HistoricalEvent | None:
+    def _parse_historical_event(
+        item, selected_channels: set[str]
+    ) -> tuple[HistoricalEvent, str] | None:
         classification = text(item, "metaId")
         occurred = text(item, "StartDateTime") or text(item, "startTime")
         if not classification or not occurred or len(classification) > 256:
@@ -258,38 +296,44 @@ class HikvisionAdapter:
         )
         if not match:
             return None
-        event_type = _EVENT_LOG_CLASS_LOOKUP.get(match.group(1).lower())
+        event_identity = _EVENT_LOG_CLASS_LOOKUP.get(match.group(1).lower())
         channel_external_id = match.group(2)
-        if event_type is None or channel_external_id not in selected_channels:
+        if event_identity is None or channel_external_id not in selected_channels:
             return None
+        event_type, phase = event_identity
         occurred_at = _parse_time(occurred)
         source_id = hashlib.sha256(
             f"{classification.lower()}|{occurred_at.isoformat()}".encode("utf-8")
         ).hexdigest()[:32]
-        return HistoricalEvent(
-            channel_external_id,
-            event_type,
-            occurred_at,
-            classification,
-            source_id,
+        return (
+            HistoricalEvent(
+                channel_external_id,
+                event_type,
+                occurred_at,
+                classification,
+                source_id,
+            ),
+            phase,
         )
 
     @staticmethod
     def _event_log_search_body(
         query: HistoricalEventQuery,
-        event_type: str,
+        event_class: str,
         probe_channel: str,
         position: int,
+        *,
+        include_stop_lookahead: bool = False,
     ) -> bytes:
-        event_class = _EVENT_LOG_CLASSES[event_type]
         search_id = uuid.uuid5(
             uuid.NAMESPACE_URL,
             "tracecue:event-log-search:"
-            f"{event_type}|{query.start_at.isoformat()}|{query.end_at.isoformat()}|"
+            f"{event_class}|{query.start_at.isoformat()}|{query.end_at.isoformat()}|"
             f"{'|'.join(query.external_channel_ids)}",
         )
         start = query.start_at.isoformat().replace("+00:00", "Z")
-        end = query.end_at.isoformat().replace("+00:00", "Z")
+        end_at = query.end_at + (timedelta(hours=1) if include_stop_lookahead else timedelta())
+        end = end_at.isoformat().replace("+00:00", "Z")
         meta_id = html.escape(f"log.hikvision.com/Alarm/{event_class}/{probe_channel}")
         return (
             '<?xml version="1.0" encoding="UTF-8"?>'
@@ -411,14 +455,14 @@ class HikvisionAdapter:
             if end > start:
                 clipped.append((start, end, span.playback_locator))
         covered: list[tuple[datetime, datetime]] = []
-        locators: list[str] = []
+        segments: list[ResolvedMediaSegment] = []
         for start, end, locator in clipped:
             if covered and start <= covered[-1][1]:
                 covered[-1] = (covered[-1][0], max(covered[-1][1], end))
             else:
                 covered.append((start, end))
-            if locator not in locators:
-                locators.append(locator)
+            if not any(segment.playback_locator == locator for segment in segments):
+                segments.append(ResolvedMediaSegment(start, end, locator))
         missing: list[tuple[datetime, datetime]] = []
         cursor = requested_start
         for start, end in covered:
@@ -432,7 +476,7 @@ class HikvisionAdapter:
             requested_end,
             tuple(covered),
             tuple(missing),
-            tuple(locators),
+            tuple(segments),
         )
 
     def _parse_device(self, response: HttpResponse) -> DeviceIdentity:
@@ -663,6 +707,27 @@ def playback_locator_for_device_time(locator: str, utc_offset_minutes: int) -> s
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(translated), parsed.fragment))
 
 
+def playback_locator_for_window(
+    locator: str, start_at: datetime, end_at: datetime
+) -> str:
+    """Replace a broad NVR locator's bounds with the resolved UTC media segment."""
+    if end_at <= start_at:
+        raise ValueError("playback locator end must be after start")
+    parsed = urlsplit(locator)
+    bounded = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in {"starttime", "endtime"}
+    ]
+    bounded.extend(
+        (
+            ("starttime", start_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")),
+            ("endtime", end_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")),
+        )
+    )
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(bounded), parsed.fragment))
+
+
 def _parse_rule_overlays(root, event_type: str) -> tuple[RuleOverlay, ...]:
     overlays: list[RuleOverlay] = []
     rows = _parse_int(text(root, "rowGranularity"), 1, 128)
@@ -698,6 +763,11 @@ def _parse_rule_overlays(root, event_type: str) -> tuple[RuleOverlay, ...]:
             (x, y) for x, y in zip(x_values[:128], y_values[:128])
             if x is not None and y is not None
         )
+        # Evidenced Hikvision Smart coordinate-list endpoints use the lower image
+        # edge as the vertical origin. Normalize them to TraceCue's top-left SVG
+        # coordinate system. Motion grids already use row order and are unchanged.
+        if event_type in {"line_crossing", "region_intrusion"}:
+            points = tuple((x, 1_000 - y) for x, y in points)
         if len(points) < 2 or points in seen:
             continue
         kind = "line" if event_type == "line_crossing" or len(points) == 2 else "polygon"
