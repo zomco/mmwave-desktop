@@ -6,17 +6,18 @@
 
 ```text
 Event search
-├─ Time and business area
-├─ Camera and event-type filters
+├─ Time
+├─ NVR-grouped camera snapshots as the target-area selector
+├─ User-facing behavior filters
 ├─ Saved filters
-├─ Event preview gallery
+├─ Paged automatic preview gallery with hover motion
 └─ Generate candidate clip
 
 Device center
 ├─ Automatic LAN discovery
 ├─ Select device and enter credentials
-├─ Channels and business aliases
-└─ Read-only event/rule/notification audit
+├─ Camera cards combining snapshots, aliases and event notification state
+└─ Read-only rule selection with grid/polygon/line overlays
 
 Candidates and exports
 ├─ Browser playback and MP4 download

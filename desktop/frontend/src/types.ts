@@ -9,6 +9,7 @@ export interface Nvr {
   firmware: string | null;
   timezone: string | null;
   clock_skew_ms: number | null;
+  utc_offset_minutes: number | null;
 }
 
 export interface DiscoveredDevice {
@@ -73,6 +74,10 @@ export interface SearchResults {
   job_id: string;
   state: Job["state"];
   items: Bookmark[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
 }
 
 export interface SearchPreset {
@@ -94,6 +99,25 @@ export interface EventPreview {
   content_url: string | null;
 }
 
+export interface ChannelSnapshot {
+  channel_id: string;
+  job_id: string;
+  status: "queued" | "generating" | "ready" | "failed";
+  captured_at: string | null;
+  expires_at: string | null;
+  content_url: string | null;
+}
+
+export interface EventAnimation extends EventPreview {}
+
+export interface RuleOverlay {
+  kind: "grid" | "polygon" | "line";
+  width: number;
+  height: number;
+  points: [number, number][];
+  active_cells: [number, number][];
+}
+
 export interface EventRule {
   channel_external_id: string;
   channel_label: string;
@@ -106,6 +130,7 @@ export interface EventRule {
   region_count: number | null;
   schedule_block_count: number | null;
   note: string | null;
+  overlays: RuleOverlay[];
 }
 
 export interface EventAudit {

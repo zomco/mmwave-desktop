@@ -56,6 +56,37 @@ def test_interrupted_clip_is_not_left_generating(tmp_path: Path) -> None:
     assert row == {"status": "failed"}
 
 
+def test_schema_v4_invalidates_pre_timezone_preview_cache(tmp_path: Path) -> None:
+    database = Database(tmp_path / "preview-migration.sqlite")
+    database.initialize(100)
+    database.execute(
+        "INSERT INTO sources(id, kind, external_source_id, last_seen_ms) "
+        "VALUES ('source_1', 'nvr', 'fixture', 100)"
+    )
+    database.execute(
+        "INSERT INTO source_channels(id, source_id, external_key, label, kind, created_ms, updated_ms) "
+        "VALUES ('source_channel_1', 'source_1', '1', 'Camera', 'nvr_event', 100, 100)"
+    )
+    database.execute(
+        "INSERT INTO intervals(id, source_id, source_event_id, source_channel_id, event_type, "
+        "raw_start_ms, raw_end_ms, resolved_start_ms, resolved_end_ms, tags_json, attributes_json, "
+        "created_ms, updated_ms) VALUES ('interval_1', 'source_1', 'event_1', 'source_channel_1', "
+        "'nvr.motion', 100, 200, 100, 200, '[]', '{}', 100, 100)"
+    )
+    database.execute(
+        "INSERT INTO event_previews(interval_id, status, relative_path, created_ms, updated_ms) "
+        "VALUES ('interval_1', 'ready', 'previews/old.jpg', 100, 100)"
+    )
+    database.execute("DELETE FROM schema_migrations WHERE version=4")
+
+    database.initialize(200)
+
+    assert database.one(
+        "SELECT status, relative_path FROM event_previews WHERE interval_id='interval_1'"
+    ) == {"status": "failed", "relative_path": None}
+    assert database.one("SELECT MAX(version) AS version FROM schema_migrations") == {"version": 4}
+
+
 @pytest.mark.skipif(os.name != "nt", reason="DPAPI is Windows-only")
 def test_dpapi_store_round_trips_without_plaintext(tmp_path: Path) -> None:
     path = tmp_path / "secrets.dpapi.json"

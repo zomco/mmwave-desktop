@@ -23,15 +23,15 @@ Before this implementation, the repository contained M0 documentation, contracts
 
 - Engine: value types, strict 8 MiB `timeline.v1`, RFC 3339 offset rules, deterministic identity, quality gate, media window, merge/filter and idempotent upsert.
 - Hikvision: Digest HTTP(S), evidence snapshots, defensive XML, channels, recording pages, locators and coverage gaps.
-- Desktop backend: loopback service, same-origin safety, SQLite migrations v1-v2, DPAPI references, HTTP API v1, bounded discovery, event-rule audit, saved filters/search provenance, preview/clip jobs, recovery/cancel, timeline mapping, quota and bounded Range.
-- Desktop frontend: React/Tailwind event-first search, automatic/manual device onboarding, event configuration audit, preview gallery, event-linked clip playback/download and local diagnostics. Timeline mapping/comparison is deferred from primary navigation.
+- Desktop backend: loopback service, same-origin safety, SQLite migrations v1-v4, DPAPI references, HTTP API v1, bounded discovery, rule overlays, expiring camera-identification snapshots with recent-recording fallback, multi-NVR visual filters, paged results, cached JPEG/WebP previews, device-time-corrected clip jobs, recovery/cancel, timeline mapping, quota and bounded Range.
+- Desktop frontend: React/Tailwind event-first search, automatic/manual device onboarding, combined camera/rule cards, NVR-grouped visual target selection, localized behaviors, automatic paged previews with hover motion, event-linked clip playback/download and local diagnostics. Timeline mapping/comparison is deferred from primary navigation.
 - Gateway: HA-free experimental bridge, clock health, bounded trajectory buffer, traverse quality, durable intervals and export.
 - Delivery: exact npm lock, Python development lock, module CI, CodeQL, Dependabot, Windows packaging/sign/install/smoke and release manifest gates.
 
 ## External evidence still required
 
 1. Mirror and review the complete corresponding source and notices for the pinned BtbN static LGPL dependency set; the FFmpeg and build-script snapshots are already pinned.
-2. Run the compatibility procedure on two authorized Hikvision model/firmware combinations, save redacted fixtures/evidence and measure H.264/H.265/audio outcomes.
+2. Grant live-view permission to a dedicated read-only account on the authorized `DS-7808NB-K1/8P` if true near-live identification is required, then repeat the probe/search/rule/export procedure on a second Hikvision model/firmware combination. Save only redacted fixtures/evidence and measure H.264/H.265/audio outcomes.
 3. Select one legally/protocol-reviewed radar adapter, capture synthetic/redacted fixtures and run an unattended clock/reconnect/offline-retention scenario.
 4. Configure approved signing credentials, then run the signed installer smoke test and an unfamiliar-user install-to-playback session.
 5. Create or obtain a cleared labelled dataset before reporting precision, recall or review-volume improvement.

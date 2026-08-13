@@ -1,6 +1,6 @@
 """Public Hikvision adapter API."""
 
-from .adapter import HikvisionAdapter
+from .adapter import HikvisionAdapter, playback_locator_for_device_time
 from .discovery import discover_devices, parse_discovery_response
 from .errors import (
     AuthenticationError,
@@ -24,6 +24,7 @@ from .models import (
     Page,
     RecordingQuery,
     RecordingSpan,
+    RuleOverlay,
 )
 from .transport import DigestTransport, HttpResponse, Transport
 
@@ -49,6 +50,8 @@ __all__ = [
     "PaginationError",
     "RecordingQuery",
     "RecordingSpan",
+    "RuleOverlay",
+    "playback_locator_for_device_time",
     "ResponseLimitError",
     "Transport",
     "UnsafePayloadError",

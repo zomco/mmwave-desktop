@@ -34,9 +34,12 @@ GET    /api/v1/nvrs/{nvr_id}/capabilities
 GET    /api/v1/nvrs/{nvr_id}/event-audit
 POST   /api/v1/nvrs/{nvr_id}/event-audit
 PATCH  /api/v1/channels/{channel_id}
+GET    /api/v1/channels/{channel_id}/snapshot
+POST   /api/v1/channels/{channel_id}/snapshot
+GET    /api/v1/channels/{channel_id}/snapshot/content
 ```
 
-`nvrs/discover` 接受 0.5 到 5.0 秒的有界 `timeout_seconds`。它优先使用 ONVIF WS-Discovery，回退方案只在最多三个本机直连私有 `/24` 网段上进行未认证的 80 端口探测。回退结果只是 ISAPI 候选，必须由用户提供凭据通过 `nvrs/probe` 后才能添加。事件审计只读部分移动/智能规则与 trigger-link 配置；仅返回安全摘要，禁止返回原始 XML/凭据，也绝不修改 NVR。
+`nvrs/discover` 接受 0.5 到 5.0 秒的有界 `timeout_seconds`。它优先使用 ONVIF WS-Discovery，回退方案只在最多三个本机直连私有 `/24` 网段上进行未认证的 80 端口探测。回退结果只是 ISAPI 候选，必须由用户提供凭据通过 `nvrs/probe` 后才能添加。事件审计只读部分移动/智能规则与 trigger-link 配置；在有实测证据时返回有界栅格/多边形/越界线覆盖层，禁止返回原始 XML/凭据，也绝不修改 NVR。通道截图异步生成，优先使用设备证据中的低码率 track；实时查看权限被拒绝时，回退到有界的最近录像检索。截图 30 秒过期并只从本地派生媒体缓存交付；回退画面只用于识别摄像机，不宣称是实时视频。
 
 Probe 只读并返回结构化证据：
 
@@ -81,6 +84,9 @@ GET  /api/v1/bookmarks/{bookmark_id}
 GET  /api/v1/bookmarks/{bookmark_id}/preview
 POST /api/v1/bookmarks/{bookmark_id}/preview
 GET  /api/v1/bookmarks/{bookmark_id}/preview/content
+GET  /api/v1/bookmarks/{bookmark_id}/animation
+POST /api/v1/bookmarks/{bookmark_id}/animation
+GET  /api/v1/bookmarks/{bookmark_id}/animation/content
 ```
 
 请求示例：
@@ -92,13 +98,12 @@ GET  /api/v1/bookmarks/{bookmark_id}/preview/content
   "from": "2026-08-12T00:00:00+08:00",
   "to": "2026-08-13T00:00:00+08:00",
   "source_modes": ["record_classification"],
-  "area_name": "北门",
   "event_types": ["motion", "line_crossing"],
   "preset_id": "preset_01"
 }
 ```
 
-`area_name` 是用户定义的业务标签；实际区域映射由所选稳定摄像机 ID 和事件类型标签组成，不能声称它等于 NVR 画面多边形。Preset 保存该映射。`search-jobs/{job_id}/results` 只返回本次检索产生的事件，使后续片段能够精确追溯到检索会话。预览生成是异步 FFmpeg 作业，在派生媒体根目录下原子写入一张校验后的 JPEG。
+实际目标区域是所选稳定摄像机 ID 集合；浏览器按 NVR 分组展示摄像机画面，因此不再提供录像机或自由文本区域筛选。Preset 保存摄像机 ID 与事件标签并可跨多台录像机；前端会为涉及的每台 NVR 提交一个有界检索作业。`search-jobs/{job_id}/results?limit=12&offset=0` 返回有界分页、总数和 `has_more`，且只包含本次检索产生的事件。JPEG 预览异步生成并按事件缓存；动图路由按需生成经过校验的有界 3 秒 WebP 悬停预览。全部文件均在派生媒体根目录原子写入。
 
 大范围检索使用后台作业。书签列表使用服务端不透明 cursor，禁止透传海康分页位置或 token。
 
@@ -127,6 +132,8 @@ POST   /api/v1/jobs/{job_id}/cancel
 ```
 
 按书签创建时，公开 Clip 记录包含安全的 `origin` 字段：书签 ID、检索作业 ID、区域标签、通道标签、事件类型/原始分类、事件时间窗，以及是否应用了显式候选时长上限；绝不包含 RTSP locator 或凭据。显式通道/时间窗出片的 `origin` 为 `null`。
+
+内部事件与 Clip 时间继续使用 UTC。对于经实测会把紧凑 RTSP 回放参数当作设备本地墙上时间解释（尽管带 `Z` 后缀）的海康固件，媒体边界仅使用实测设备偏移转换这些 locator 参数；公开事件/Clip 时间戳不做平移。
 
 `audio_policy` 可取 `prefer`、`preserve` 或 `omit`。`prefer` 会将受支持音频转为
 AAC；若 NVR 声明了 FFmpeg 无法解码的私有音频载荷，则降级生成静音片段。

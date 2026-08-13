@@ -77,3 +77,27 @@ export function dateToLocalInput(value: Date): string {
     + `T${pad(value.getHours())}:${pad(value.getMinutes())}`
   );
 }
+
+const eventLabels: Record<string, string> = {
+  motion: "移动侦测",
+  "nvr.motion": "移动侦测",
+  line_crossing: "越界侦测",
+  "nvr.line_crossing": "越界侦测",
+  region_intrusion: "区域入侵",
+  "nvr.region_intrusion": "区域入侵",
+  smart: "智能事件",
+  "nvr.smart": "智能事件",
+  continuous: "连续录像",
+  "nvr.continuous": "连续录像",
+};
+
+export function eventPresentation(value?: string | null): string {
+  if (!value) return "录像候选";
+  const normalized = value.toLowerCase();
+  if (eventLabels[normalized]) return eventLabels[normalized];
+  if (normalized.includes("timing") || normalized.includes("continuous")) return "连续录像";
+  if (normalized.includes("motion") || normalized.includes("vmd")) return "移动侦测";
+  if (normalized.includes("line") && normalized.includes("detect")) return "越界侦测";
+  if (normalized.includes("intrusion") || normalized.includes("fielddetect")) return "区域入侵";
+  return "其他 NVR 事件";
+}

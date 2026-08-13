@@ -21,7 +21,7 @@ def test_status_reports_schema_and_media_without_paths(services) -> None:
     response = client(services).get("/api/v1/status")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 4
     assert payload["bind_host"] == "127.0.0.1"
     assert "data_dir" not in json.dumps(payload)
 
@@ -40,6 +40,13 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert len(channels) == 1
     assert channels[0]["id"] != "101"
 
+    snapshot = api.post(f"/api/v1/channels/{channels[0]['id']}/snapshot")
+    assert snapshot.status_code == 202
+    assert services.worker.process_once()
+    ready_snapshot = api.get(f"/api/v1/channels/{channels[0]['id']}/snapshot").json()
+    assert ready_snapshot["status"] == "ready"
+    assert api.get(ready_snapshot["content_url"]).content.startswith(b"\xff\xd8\xff")
+
     search = api.post(
         "/api/v1/search-jobs",
         json={
@@ -56,6 +63,7 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert finished["state"] == "succeeded"
     search_results = api.get(f"/api/v1/search-jobs/{search.json()['id']}/results").json()
     assert len(search_results["items"]) == 1
+    assert search_results["total"] == 1
 
     bookmarks = api.get("/api/v1/bookmarks").json()["items"]
     assert len(bookmarks) == 1
@@ -68,6 +76,13 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     ready_preview = api.get(f"/api/v1/bookmarks/{bookmarks[0]['id']}/preview").json()
     assert ready_preview["status"] == "ready"
     assert api.get(ready_preview["content_url"]).content.startswith(b"\xff\xd8\xff")
+
+    animation = api.post(f"/api/v1/bookmarks/{bookmarks[0]['id']}/animation")
+    assert animation.status_code == 202
+    assert services.worker.process_once()
+    ready_animation = api.get(f"/api/v1/bookmarks/{bookmarks[0]['id']}/animation").json()
+    assert ready_animation["status"] == "ready"
+    assert api.get(ready_animation["content_url"]).headers["content-type"].startswith("image/webp")
 
     clip = api.post(
         "/api/v1/clips",

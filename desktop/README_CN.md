@@ -33,7 +33,7 @@ Desktop 可以依赖 `engine` 和 `integrations/hikvision`。它消费 `timeline
 
 ## 已实现基线
 
-后端已实现 HTTP API v1 路由、SQLite migration v1-v2、DPAPI 凭据引用、有界 ONVIF/私有网段发现、基于证据的 NVR 添加、事件规则审计、通道别名、历史筛选条件、检索会话事件结果、事件预览、持久化作业、时间轴导入/映射、FFmpeg remux/转码/校验、带事件/检索来源的原子片段、配额保留和有界 Range 交付。React/Tailwind SPA 的主功能只保留事件检索、设备中心、候选与导出、设置四项；时间轴对照/映射作为后期高级功能保留。
+后端已实现 HTTP API v1 路由、SQLite migration v1-v4、DPAPI 凭据引用、有界 ONVIF/私有网段发现、基于证据的 NVR 添加、带安全画面覆盖层的事件规则审计、缓存的摄像机识别截图（优先低码率码流、回退最近录像）、可视摄像机历史筛选、分页检索结果、缓存的 JPEG/WebP 事件预览、持久化作业、时间轴导入/映射、FFmpeg remux/转码/校验、按设备本地时间校正且带事件/检索来源的原子片段、配额保留和有界 Range 交付。React/Tailwind SPA 的主功能只保留事件检索、设备中心、候选与导出、设置四项；时间轴对照/映射作为后期高级功能保留。
 
 ```powershell
 python -m pip install -r requirements-dev.lock.txt

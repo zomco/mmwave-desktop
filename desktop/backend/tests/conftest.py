@@ -109,6 +109,27 @@ class FakeMediaRunner:
         output.write_bytes(b"\xff\xd8\xfffixture-preview")
         return output
 
+    def generate_snapshot(
+        self, *, snapshot_id, live_locator, username, password, cancel_requested
+    ):
+        assert live_locator == "rtsp://192.0.2.10:554/Streaming/Channels/101"
+        assert password == "secret-password"
+        output = self.clip_root / "snapshots" / f"{snapshot_id}.jpg"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"\xff\xd8\xfffixture-snapshot")
+        return output
+
+    def generate_animation(
+        self, *, animation_id, playback_locator, username, password,
+        duration_seconds, cancel_requested
+    ):
+        assert playback_locator == "rtsp://192.0.2.10/fixture"
+        assert duration_seconds == 3
+        output = self.clip_root / "animations" / f"{animation_id}.webp"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"RIFFfixtureWEBP")
+        return output
+
 
 @pytest.fixture
 def services(tmp_path: Path) -> DesktopServices:

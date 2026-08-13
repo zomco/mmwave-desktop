@@ -117,13 +117,88 @@ class FFmpegRunner:
         password: str,
         cancel_requested: Callable[[], bool] | None = None,
     ) -> Path:
-        if not preview_id.startswith("preview_") or not preview_id.removeprefix("preview_").isalnum():
+        return self._generate_jpeg(
+            media_id=preview_id,
+            required_prefix="preview_",
+            directory="previews",
+            playback_locator=playback_locator,
+            username=username,
+            password=password,
+            cancel_requested=cancel_requested,
+        )
+
+    def generate_snapshot(
+        self,
+        *,
+        snapshot_id: str,
+        live_locator: str,
+        username: str,
+        password: str,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> Path:
+        return self._generate_jpeg(
+            media_id=snapshot_id,
+            required_prefix="snapshot_",
+            directory="snapshots",
+            playback_locator=live_locator,
+            username=username,
+            password=password,
+            cancel_requested=cancel_requested,
+        )
+
+    def generate_animation(
+        self,
+        *,
+        animation_id: str,
+        playback_locator: str,
+        username: str,
+        password: str,
+        duration_seconds: float = 3,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> Path:
+        if not animation_id.startswith("animation_") or not animation_id.removeprefix("animation_").isalnum():
+            raise MediaError("MEDIA_PATH_INVALID", "Animation identity is invalid.", 400)
+        animation_root = (self.clip_root / "animations").resolve()
+        animation_root.mkdir(parents=True, exist_ok=True)
+        output = (animation_root / f"{animation_id}.webp").resolve()
+        partial = output.with_suffix(".webp.partial")
+        authenticated = _with_credentials(playback_locator, username, password)
+        command = [
+            str(self.ffmpeg_path), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+            "-rtsp_transport", "tcp", "-timeout", str(self.connection_timeout_seconds * 1_000_000),
+            "-i", authenticated, "-map", "0:v:0", "-t", f"{max(1, min(duration_seconds, 5)):g}",
+            "-vf", "fps=4,scale=480:-2:force_original_aspect_ratio=decrease",
+            "-an", "-loop", "0", "-c:v", "libwebp_anim", "-quality", "60",
+            "-f", "webp", str(partial),
+        ]
+        try:
+            if not self._run(command, cancel_requested):
+                raise MediaError("MEDIA_ANIMATION_FAILED", "The event hover preview could not be generated.", 422)
+            size = partial.stat().st_size
+            header = partial.read_bytes()[:12]
+            if size <= 12 or size > 20 * 1024 * 1024 or header[:4] != b"RIFF" or header[8:12] != b"WEBP":
+                raise MediaError("MEDIA_ANIMATION_FAILED", "The generated hover preview is not valid WebP.", 500)
+            partial.replace(output)
+            return output
+        finally:
+            partial.unlink(missing_ok=True)
+
+    def _generate_jpeg(
+        self,
+        *,
+        media_id: str,
+        required_prefix: str,
+        directory: str,
+        playback_locator: str,
+        username: str,
+        password: str,
+        cancel_requested: Callable[[], bool] | None,
+    ) -> Path:
+        if not media_id.startswith(required_prefix) or not media_id.removeprefix(required_prefix).isalnum():
             raise MediaError("MEDIA_PATH_INVALID", "Preview identity is invalid.", 400)
-        preview_root = (self.clip_root / "previews").resolve()
+        preview_root = (self.clip_root / directory).resolve()
         preview_root.mkdir(parents=True, exist_ok=True)
-        output = (preview_root / f"{preview_id}.jpg").resolve()
-        if output.parent != preview_root:
-            raise MediaError("MEDIA_PATH_INVALID", "Preview path is outside the preview directory.", 400)
+        output = (preview_root / f"{media_id}.jpg").resolve()
         partial = output.with_suffix(".jpg.partial")
         authenticated = _with_credentials(playback_locator, username, password)
         command = [
@@ -134,10 +209,10 @@ class FFmpegRunner:
         ]
         try:
             if not self._run(command, cancel_requested):
-                raise MediaError("MEDIA_PREVIEW_FAILED", "The event preview image could not be generated.", 422)
+                raise MediaError("MEDIA_PREVIEW_FAILED", "The preview image could not be generated.", 422)
             size = partial.stat().st_size
-            if size <= 4 or size > 20 * 1024 * 1024 or not partial.read_bytes()[:3] == b"\xff\xd8\xff":
-                raise MediaError("MEDIA_PREVIEW_FAILED", "The generated event preview is not a valid JPEG.", 500)
+            if size <= 4 or size > 20 * 1024 * 1024 or partial.read_bytes()[:3] != b"\xff\xd8\xff":
+                raise MediaError("MEDIA_PREVIEW_FAILED", "The generated preview is not a valid JPEG.", 500)
             partial.replace(output)
             return output
         finally:

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 MIGRATION_1 = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -220,6 +220,36 @@ CREATE TABLE event_previews (
 );
 """
 
+MIGRATION_3 = """
+ALTER TABLE nvrs ADD COLUMN utc_offset_minutes INTEGER;
+ALTER TABLE search_presets ADD COLUMN scope_json TEXT;
+CREATE TABLE channel_snapshots (
+    channel_id TEXT PRIMARY KEY REFERENCES nvr_channels(id) ON DELETE CASCADE,
+    job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued', 'generating', 'ready', 'failed')),
+    relative_path TEXT,
+    captured_ms INTEGER,
+    expires_ms INTEGER,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL
+);
+CREATE TABLE event_animations (
+    interval_id TEXT PRIMARY KEY REFERENCES intervals(id) ON DELETE CASCADE,
+    job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued', 'generating', 'ready', 'failed')),
+    relative_path TEXT,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL
+);
+"""
+
+MIGRATION_4 = """
+-- Playback locators on the first supported Hikvision firmware were found to
+-- use device-local wall-clock tokens. Invalidate preview caches so an upgrade
+-- cannot keep serving images produced with the old UTC token mapping.
+UPDATE event_previews SET status='failed', relative_path=NULL;
+"""
+
 
 DEFAULT_SETTINGS = {
     "clip_quota_bytes": 10 * 1024 * 1024 * 1024,
@@ -259,6 +289,20 @@ class Database:
                     "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
                     (2, now_ms),
                 )
+                current = 2
+            if current < 3:
+                connection.executescript(MIGRATION_3)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
+                    (3, now_ms),
+                )
+                current = 3
+            if current < 4:
+                connection.executescript(MIGRATION_4)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
+                    (4, now_ms),
+                )
             for key, value in DEFAULT_SETTINGS.items():
                 connection.execute(
                     "INSERT OR IGNORE INTO settings(key, value_json) VALUES (?, ?)",
@@ -294,6 +338,17 @@ class Database:
                 """,
                 (now_ms,),
             )
+            for table in ("channel_snapshots", "event_animations"):
+                connection.execute(
+                    f"""
+                    UPDATE {table} SET status='failed', updated_ms=?
+                    WHERE status IN ('queued', 'generating')
+                      AND job_id IN (
+                          SELECT id FROM jobs WHERE state IN ('failed', 'cancelled', 'interrupted')
+                      )
+                    """,
+                    (now_ms,),
+                )
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

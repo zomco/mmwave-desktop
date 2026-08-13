@@ -129,3 +129,26 @@ def test_render_applies_requested_output_duration(tmp_path: Path) -> None:
     )
 
     assert commands[0][commands[0].index("-t") + 1] == "30"
+
+
+def test_animation_is_bounded_webp_and_atomic(tmp_path: Path) -> None:
+    runner = FFmpegRunner(Path("ffmpeg.exe"), Path("ffprobe.exe"), tmp_path)
+    commands: list[list[str]] = []
+
+    def run(command: list[str], _cancel_requested=None) -> bool:
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"RIFF0000WEBPfixture")
+        return True
+
+    runner._run = run  # type: ignore[method-assign]
+    output = runner.generate_animation(
+        animation_id="animation_abc123",
+        playback_locator="rtsp://192.0.2.10/recording",
+        username="operator",
+        password="password",
+        duration_seconds=3,
+    )
+
+    assert output.name == "animation_abc123.webp"
+    assert commands[0][commands[0].index("-t") + 1] == "3"
+    assert "libwebp_anim" in commands[0]

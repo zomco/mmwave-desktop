@@ -14,6 +14,7 @@ from tracecue_hikvision import (
     RecordingQuery,
     UnsafePayloadError,
     UpstreamError,
+    playback_locator_for_device_time,
 )
 
 
@@ -144,6 +145,9 @@ class AdapterTests(unittest.TestCase):
         self.assertTrue(motion.notification_configured)
         self.assertEqual(60, motion.sensitivity)
         self.assertEqual(1, motion.region_count)
+        self.assertEqual("grid", motion.overlays[0].kind)
+        self.assertEqual((4, 2), (motion.overlays[0].width, motion.overlays[0].height))
+        self.assertEqual(5, len(motion.overlays[0].active_cells))
         self.assertEqual(1, motion.schedule_block_count)
         self.assertNotIn("beginTime", repr(motion))
 
@@ -199,6 +203,15 @@ class AdapterTests(unittest.TestCase):
         page = adapter.search_recordings(query)
 
         self.assertEqual(554, urlsplit(page.items[0].playback_locator).port)
+
+    def test_translates_playback_tokens_to_device_wall_clock(self) -> None:
+        locator = "rtsp://192.0.2.10:554/Streaming/tracks/101?starttime=20260813T013800Z&endtime=20260813T013830Z&name=fixture"
+
+        translated = playback_locator_for_device_time(locator, 480)
+
+        self.assertIn("starttime=20260813T093800Z", translated)
+        self.assertIn("endtime=20260813T093830Z", translated)
+        self.assertIn("name=fixture", translated)
 
     def test_pagination_detects_non_progressing_page(self) -> None:
         content = fixture("search_page.xml").replace(b"NO MORE MATCHES", b"MORE MATCHES   ")

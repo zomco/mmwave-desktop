@@ -206,6 +206,18 @@ def create_app(
     def patch_channel(channel_id: str, request: ChannelPatchRequest) -> dict:
         return application_services.patch_channel(channel_id, request.model_dump())
 
+    @app.get(api + "/channels/{channel_id}/snapshot")
+    def get_channel_snapshot(channel_id: str) -> dict:
+        return application_services.get_channel_snapshot(channel_id)
+
+    @app.post(api + "/channels/{channel_id}/snapshot", status_code=202)
+    def create_channel_snapshot(channel_id: str) -> dict:
+        return application_services.enqueue_channel_snapshot(channel_id)
+
+    @app.get(api + "/channels/{channel_id}/snapshot/content")
+    def channel_snapshot_content(channel_id: str) -> FileResponse:
+        return FileResponse(application_services.channel_snapshot_file(channel_id), media_type="image/jpeg")
+
     @app.post(api + "/search-jobs", status_code=202)
     def create_search(request: SearchRequest) -> dict:
         values = request.model_dump(by_alias=True)
@@ -219,8 +231,12 @@ def create_app(
         return job
 
     @app.get(api + "/search-jobs/{job_id}/results")
-    def get_search_results(job_id: str) -> dict:
-        return application_services.search_results(job_id)
+    def get_search_results(
+        job_id: str,
+        limit: int = Query(default=12, ge=1, le=200),
+        offset: int = Query(default=0, ge=0, le=100_000),
+    ) -> dict:
+        return application_services.search_results(job_id, limit=limit, offset=offset)
 
     @app.get(api + "/search-presets")
     def list_search_presets() -> list[dict]:
@@ -260,6 +276,18 @@ def create_app(
     @app.get(api + "/bookmarks/{bookmark_id}/preview/content")
     def event_preview_content(bookmark_id: str) -> FileResponse:
         return FileResponse(application_services.event_preview_file(bookmark_id), media_type="image/jpeg")
+
+    @app.get(api + "/bookmarks/{bookmark_id}/animation")
+    def get_event_animation(bookmark_id: str) -> dict:
+        return application_services.get_event_animation(bookmark_id)
+
+    @app.post(api + "/bookmarks/{bookmark_id}/animation", status_code=202)
+    def create_event_animation(bookmark_id: str) -> dict:
+        return application_services.enqueue_event_animation(bookmark_id)
+
+    @app.get(api + "/bookmarks/{bookmark_id}/animation/content")
+    def event_animation_content(bookmark_id: str) -> FileResponse:
+        return FileResponse(application_services.event_animation_file(bookmark_id), media_type="image/webp")
 
     @app.post(api + "/clips", status_code=202)
     def create_clip(request: ClipRequest) -> dict:

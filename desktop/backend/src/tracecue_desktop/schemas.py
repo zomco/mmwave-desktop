@@ -49,8 +49,8 @@ class SearchRequest(ApiModel):
 
 class SearchPresetRequest(ApiModel):
     name: str = Field(min_length=1, max_length=200)
-    nvr_id: str
-    area_name: str = Field(min_length=1, max_length=200)
+    nvr_id: str | None = None
+    area_name: str = Field(default="", max_length=200)
     channel_ids: list[str] = Field(min_length=1, max_length=64)
     event_types: list[str] = Field(default_factory=list, max_length=32)
 

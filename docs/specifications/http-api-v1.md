@@ -34,9 +34,12 @@ GET    /api/v1/nvrs/{nvr_id}/capabilities
 GET    /api/v1/nvrs/{nvr_id}/event-audit
 POST   /api/v1/nvrs/{nvr_id}/event-audit
 PATCH  /api/v1/channels/{channel_id}
+GET    /api/v1/channels/{channel_id}/snapshot
+POST   /api/v1/channels/{channel_id}/snapshot
+GET    /api/v1/channels/{channel_id}/snapshot/content
 ```
 
-`nvrs/discover` accepts a bounded `timeout_seconds` from 0.5 to 5.0. It uses ONVIF WS-Discovery first and an unauthenticated port-80 probe on at most three directly attached private `/24` networks as fallback. A fallback result is only an ISAPI candidate and must pass `nvrs/probe` with user-supplied credentials before addition. The event audit reads selected motion/smart rule and trigger-link settings; it returns safe summaries, never raw XML or credentials, and never modifies the NVR.
+`nvrs/discover` accepts a bounded `timeout_seconds` from 0.5 to 5.0. It uses ONVIF WS-Discovery first and an unauthenticated port-80 probe on at most three directly attached private `/24` networks as fallback. A fallback result is only an ISAPI candidate and must pass `nvrs/probe` with user-supplied credentials before addition. The event audit reads selected motion/smart rule and trigger-link settings; it returns bounded grid/polygon/line overlays where observed, never raw XML or credentials, and never modifies the NVR. Channel snapshots are asynchronous, try an evidenced low-rate track first, and fall back to a bounded recent-recording search when live-view permission is denied. They expire after 30 seconds and are served only from the local derived-media cache; the fallback is a camera-identification image, not a claim of realtime video.
 
 Probe is read-only and returns structured evidence:
 
@@ -81,6 +84,9 @@ GET  /api/v1/bookmarks/{bookmark_id}
 GET  /api/v1/bookmarks/{bookmark_id}/preview
 POST /api/v1/bookmarks/{bookmark_id}/preview
 GET  /api/v1/bookmarks/{bookmark_id}/preview/content
+GET  /api/v1/bookmarks/{bookmark_id}/animation
+POST /api/v1/bookmarks/{bookmark_id}/animation
+GET  /api/v1/bookmarks/{bookmark_id}/animation/content
 ```
 
 Example search:
@@ -92,13 +98,12 @@ Example search:
   "from": "2026-08-12T00:00:00+08:00",
   "to": "2026-08-13T00:00:00+08:00",
   "source_modes": ["record_classification"],
-  "area_name": "north entrance",
   "event_types": ["motion", "line_crossing"],
   "preset_id": "preset_01"
 }
 ```
 
-`area_name` is a user-authored business label: the effective area mapping is the selected stable camera IDs plus event-type tags. It is not asserted to be an NVR image polygon. Presets persist that mapping. `search-jobs/{job_id}/results` returns only events produced by that search, which keeps later clips attributable to an exact session. Preview creation is an asynchronous FFmpeg job that writes one verified JPEG atomically under the derived-media root.
+The effective target area is the selected stable camera-ID set; the browser groups camera images by NVR, so there is no recorder or free-text area filter. Presets persist camera IDs plus event tags and may span multiple recorders; the frontend submits one bounded search job per affected NVR. `search-jobs/{job_id}/results?limit=12&offset=0` returns a bounded page, total count and `has_more`, and only includes events produced by that search. JPEG preview creation is asynchronous and cached per event. The animation route lazily creates a verified, bounded three-second animated WebP for hover playback. All files are written atomically under the derived-media root.
 
 Large searches are jobs. Bookmark lists use opaque server cursors; Hikvision pagination tokens/positions do not leak through the API.
 
@@ -127,6 +132,8 @@ Create by bookmark or explicit channel/window, never by a browser-supplied RTSP 
 ```
 
 When created from a bookmark, the public clip record includes safe `origin` fields: bookmark ID, search job ID, area label, channel label, event type/classification, event window and whether an explicitly requested candidate-duration cap was applied. It never includes an RTSP locator or credential. Explicit channel/window clips have `origin: null`.
+
+Internal event and clip time remains UTC. For tested Hikvision firmware whose compact RTSP playback tokens are interpreted as device-local wall time despite their `Z` suffix, the media boundary translates only those locator tokens using the observed device offset. Public event/clip timestamps are not shifted.
 
 `audio_policy` is `prefer`, `preserve` or `omit`. `prefer` transcodes supported
 audio to AAC and falls back to a silent clip when an NVR advertises an

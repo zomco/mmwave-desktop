@@ -34,3 +34,7 @@ ADR-0004 已于 2026-08-12 接受，单仓现使用 MIT。若后续历史资料�
 可执行代码现会在首次启动时初始化 Desktop SQLite schema version 1。新数据库创建文档约定的 NVR、能力、通道、来源、空间/绑定、Interval、录像段、作业、片段和导入表。此前没有可执行数据库需要迁移。重启时，未完成的 `running` 作业会改为 `interrupted`；系统不会猜测媒体工作已经完成。
 
 Gateway 为常驻 Interval 和有界诊断维护独立内部 SQLite。Desktop 永不读取该数据库；数据通过 `timeline.v1` 跨越边界。
+
+### Desktop schema v2-v4
+
+Schema v2 新增历史筛选/检索结果、只读 NVR 事件审计证据、事件 JPEG 预览和 Clip 来源。Schema v3 新增实测 NVR UTC 偏移、历史筛选的多 NVR 摄像机范围、会过期的通道截图和缓存事件 WebP 动图。已有筛选继续使用原摄像机列表，已有 Interval/Clip 的 UTC 时间戳不改变；已有 NVR 行在重新探测写入显式偏移前，会回退解析已保存的 POSIX 时区。由于回放参数映射发生变化，schema v4 会使旧 JPEG 预览缓存失效；后续按需重新生成，不会改动 NVR 原始录像。

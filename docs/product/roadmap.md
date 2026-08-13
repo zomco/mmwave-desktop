@@ -50,4 +50,4 @@ Software implementation status is tracked separately from hardware/product exit 
 
 ## Deferred
 
-LAN exposure, live streaming preview, ONVIF brand expansion, direct phone relay, cloud relay, automatic updater, channel licensing and hardware bundles remain deferred until preceding evidence exists. Multiple NVR records are implemented, but cross-NVR aggregate search remains deferred.
+LAN exposure, continuous live streaming preview, ONVIF brand expansion, direct phone relay, cloud relay, automatic updater, channel licensing and hardware bundles remain deferred until preceding evidence exists. Multiple NVR records and bounded cross-NVR aggregate search are implemented.

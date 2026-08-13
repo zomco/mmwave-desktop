@@ -6,8 +6,8 @@ import hashlib
 import html
 import re
 import uuid
-from datetime import datetime, timezone
-from urllib.parse import urlsplit, urlunsplit
+from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .errors import AuthenticationError, PaginationError, UnsafePayloadError, UpstreamError
 from .models import (
@@ -22,6 +22,7 @@ from .models import (
     Page,
     RecordingQuery,
     RecordingSpan,
+    RuleOverlay,
 )
 from .transport import HttpResponse, Transport
 from .xmlutil import children, local_name, parse_xml, text
@@ -189,8 +190,9 @@ class HikvisionAdapter:
         root = parse_xml(response.body)
         enabled = _parse_bool(text(root, "enabled"))
         sensitivity = _parse_int(text(root, "sensitivityLevel") or text(root, "sensitivity"), 0, 100)
+        overlays = _parse_rule_overlays(root, event_type)
         region_names = {"Region", "DetectionRegion", "FieldDetectionRegion", "LineDetectionRegion"}
-        region_count = sum(1 for item in root.iter() if local_name(item.tag) in region_names)
+        region_count = len(overlays) or sum(1 for item in root.iter() if local_name(item.tag) in region_names)
         schedule_names = {"TimeBlock", "TimeSegment", "ScheduleAction"}
         schedule_block_count = sum(1 for item in root.iter() if local_name(item.tag) in schedule_names)
         notification_configured: bool | None = None
@@ -210,7 +212,7 @@ class HikvisionAdapter:
         return EventRuleStatus(
             channel_external_id, track_id, event_type, "supported", enabled,
             notification_configured, sensitivity, region_count, schedule_block_count,
-            endpoint, note,
+            endpoint, note, overlays,
         )
 
     def search_recordings(self, query: RecordingQuery) -> Page:
@@ -309,7 +311,15 @@ class HikvisionAdapter:
         device_time = _parse_time(local_time)
         host_time = self.now()
         skew = int((device_time.astimezone(timezone.utc) - host_time.astimezone(timezone.utc)).total_seconds() * 1000)
-        return ClockObservation(observed_at, device_time, host_time, skew, timezone_text)
+        offset = device_time.utcoffset() or timedelta(0)
+        return ClockObservation(
+            observed_at,
+            device_time,
+            host_time,
+            skew,
+            timezone_text,
+            int(offset.total_seconds() // 60),
+        )
 
     def _parse_channels(self, response: HttpResponse) -> tuple[MediaChannel, ...]:
         root = parse_xml(response.body)
@@ -496,3 +506,70 @@ def _normalize_playback_locator(locator: str) -> str:
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return urlunsplit((parsed.scheme, f"{host}:554", parsed.path, parsed.query, parsed.fragment))
+
+
+def playback_locator_for_device_time(locator: str, utc_offset_minutes: int) -> str:
+    """Translate UTC locator tokens to Hikvision's device-local RTSP wall time."""
+    if not utc_offset_minutes:
+        return locator
+    parsed = urlsplit(locator)
+    translated: list[tuple[str, str]] = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        if key.lower() not in {"starttime", "endtime"}:
+            translated.append((key, value))
+            continue
+        match = re.fullmatch(r"([0-9]{8})T([0-9]{6})Z", value, re.IGNORECASE)
+        if not match:
+            translated.append((key, value))
+            continue
+        instant = datetime.strptime("".join(match.groups()), "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        wall_clock = instant + timedelta(minutes=utc_offset_minutes)
+        translated.append((key, wall_clock.strftime("%Y%m%dT%H%M%SZ")))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(translated), parsed.fragment))
+
+
+def _parse_rule_overlays(root, event_type: str) -> tuple[RuleOverlay, ...]:
+    overlays: list[RuleOverlay] = []
+    rows = _parse_int(text(root, "rowGranularity"), 1, 128)
+    columns = _parse_int(text(root, "columnGranularity"), 1, 128)
+    grid_map = (text(root, "gridMap") or "").strip()
+    if rows and columns and grid_map and len(grid_map) <= 16_384 and re.fullmatch(r"[0-9a-fA-F]+", grid_map):
+        row_width = (columns + 3) // 4
+        if len(grid_map) >= rows * row_width:
+            cells: list[tuple[int, int]] = []
+            for row in range(rows):
+                bits = bin(int(grid_map[row * row_width:(row + 1) * row_width], 16))[2:].zfill(row_width * 4)
+                cells.extend((column, row) for column, bit in enumerate(bits[:columns]) if bit == "1")
+            if cells:
+                overlays.append(RuleOverlay("grid", columns, rows, active_cells=tuple(cells)))
+
+    coordinate_containers = {
+        "RegionCoordinatesList", "CoordinatesList", "PointList",
+        "LineCoordinatesList", "PolygonCoordinatesList",
+    }
+    seen: set[tuple[tuple[int, int], ...]] = set()
+    for container in root.iter():
+        if local_name(container.tag) not in coordinate_containers:
+            continue
+        x_values = [
+            _parse_int((item.text or "").strip(), 0, 1_000_000)
+            for item in container.iter() if local_name(item.tag) in {"positionX", "x"}
+        ]
+        y_values = [
+            _parse_int((item.text or "").strip(), 0, 1_000_000)
+            for item in container.iter() if local_name(item.tag) in {"positionY", "y"}
+        ]
+        points = tuple(
+            (x, y) for x, y in zip(x_values[:128], y_values[:128])
+            if x is not None and y is not None
+        )
+        if len(points) < 2 or points in seen:
+            continue
+        seen.add(points)
+        width = max(1_000, max(point[0] for point in points))
+        height = max(1_000, max(point[1] for point in points))
+        kind = "line" if event_type == "line_crossing" or len(points) == 2 else "polygon"
+        overlays.append(RuleOverlay(kind, width, height, points=points))
+        if len(overlays) >= 64:
+            break
+    return tuple(overlays)

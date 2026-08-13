@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comparisonMetrics, dateToLocalInput, nvrProbePayload, sourcePresentation } from "./lib";
+import { comparisonMetrics, dateToLocalInput, eventPresentation, nvrProbePayload, sourcePresentation } from "./lib";
 import type { Bookmark } from "./types";
 
 function bookmark(overrides: Partial<Bookmark>): Bookmark {
@@ -65,5 +65,12 @@ describe("local search windows", () => {
   it("formats datetime-local defaults with local clock fields instead of UTC fields", () => {
     const localTime = new Date(2026, 7, 12, 18, 30, 45);
     expect(dateToLocalInput(localTime)).toBe("2026-08-12T18:30");
+  });
+});
+
+describe("event presentation", () => {
+  it("maps vendor classifications to user-facing behavior names", () => {
+    expect(eventPresentation("recordType.meta.hikvision.com/timing")).toBe("连续录像");
+    expect(eventPresentation("nvr.region_intrusion")).toBe("区域入侵");
   });
 });

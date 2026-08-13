@@ -34,3 +34,7 @@ ADR-0004 was accepted on 2026-08-12 and the monorepo now uses MIT. If new histor
 Executable code now initializes Desktop SQLite schema version 1 on first start. New databases create the documented NVR, capability, channel, source, space/binding, interval, recording-span, job, clip and import tables. There was no prior executable database to migrate. A restart changes unfinished `running` jobs to `interrupted`; it never guesses that media work completed.
 
 Gateway owns a separate internal SQLite store for its always-on intervals and bounded diagnostics. Desktop never reads that database; data crosses via `timeline.v1`.
+
+### Desktop schema v2-v4
+
+Schema v2 added search presets/results, read-only NVR event-audit evidence, event JPEG previews and clip origin. Schema v3 adds the observed NVR UTC offset, multi-NVR camera scope for saved filters, expiring channel snapshots and cached event WebP animations. Existing presets retain their original camera list, existing interval/clip UTC timestamps do not change, and existing NVR rows fall back to parsing their stored POSIX timezone until a fresh probe supplies the explicit offset. Because playback-token mapping changed, schema v4 invalidates older JPEG preview cache rows; they are regenerated on demand while NVR originals remain untouched.

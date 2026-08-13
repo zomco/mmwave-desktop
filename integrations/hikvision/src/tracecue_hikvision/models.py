@@ -40,6 +40,7 @@ class ClockObservation:
     host_time: datetime
     estimated_skew_ms: int
     timezone: str
+    utc_offset_minutes: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,15 @@ class DiscoveredDevice:
 
 
 @dataclass(frozen=True, slots=True)
+class RuleOverlay:
+    kind: Literal["grid", "polygon", "line"]
+    width: int
+    height: int
+    points: tuple[tuple[int, int], ...] = ()
+    active_cells: tuple[tuple[int, int], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class EventRuleStatus:
     channel_external_id: str
     track_id: str | None
@@ -135,6 +145,7 @@ class EventRuleStatus:
     schedule_block_count: int | None
     endpoint: str | None
     note: str | None = None
+    overlays: tuple[RuleOverlay, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

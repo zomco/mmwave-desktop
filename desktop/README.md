@@ -33,7 +33,7 @@ One supported NVR, one channel and one time window produce an H.264 MP4 that pla
 
 ## Implemented baseline
 
-The backend implements the HTTP API v1 routes, SQLite migrations v1-v2, DPAPI credential references, bounded ONVIF/private-subnet discovery, evidence-backed NVR onboarding, event-rule audits, channel aliases, saved search presets, search-scoped event results, event previews, persistent jobs, timeline imports/mapping, FFmpeg remux/transcode/verify, atomic clips with event/search provenance, quota retention and bounded Range delivery. The React/Tailwind SPA keeps four primary views: event search, device center, candidates/exports and settings. Timeline comparison/mapping remains an advanced later-stage surface.
+The backend implements the HTTP API v1 routes, SQLite migrations v1-v4, DPAPI credential references, bounded ONVIF/private-subnet discovery, evidence-backed NVR onboarding, event-rule audits with safe image overlays, cached camera-identification snapshots (low stream first, recent recording fallback), saved visual camera filters, paged search-scoped results, cached JPEG/WebP event previews, persistent jobs, timeline imports/mapping, FFmpeg remux/transcode/verify, device-time-corrected atomic clips with event/search provenance, quota retention and bounded Range delivery. The React/Tailwind SPA keeps four primary views: event search, device center, candidates/exports and settings. Timeline comparison/mapping remains an advanced later-stage surface.
 
 ```powershell
 python -m pip install -r requirements-dev.lock.txt
