@@ -8,6 +8,7 @@ Starlette - BSD-3-Clause License - https://github.com/Kludex/starlette
 Uvicorn - BSD-3-Clause License - https://github.com/Kludex/uvicorn
 Pydantic - MIT License - https://github.com/pydantic/pydantic
 React and React DOM - MIT License - https://github.com/facebook/react
+qrcode - MIT License - https://github.com/soldair/node-qrcode
 Vite - MIT License - https://github.com/vitejs/vite
 TypeScript - Apache-2.0 License - https://github.com/microsoft/TypeScript
 Vitest - MIT License - https://github.com/vitest-dev/vitest

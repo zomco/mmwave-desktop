@@ -113,7 +113,7 @@ GET  /api/v1/bookmarks/{bookmark_id}/animation/content
 }
 ```
 
-实际目标区域恰好是一个稳定摄像机 ID；浏览器按 NVR 分组并用单选方式展示摄像机画面，因此不再提供录像机或自由文本区域筛选。`channel_ids` 必须恰好有一项。`event_types` 也必须恰好包含 `motion`、`video_tamper`、`line_crossing` 或 `region_intrusion` 中的一项；连续录像、Smart 兜底标签和多事件类型请求都会被拒绝。Preset 保存一个摄像机 ID 与一个事件标签。作业读取有界历史报警日志，并在同摄像机、同类型、最长一小时范围内配对开始/停止条目。有配对时保存真实 `event_duration_ms`；无法配对时保存 `null` 及 `duration_source: "unknown"`。`result.truncated` 表示适配器达到上限。只有生成预览/片段时才执行录像检索。`search-jobs/{job_id}/results?limit=12&offset=0` 返回有界分页、总数和 `has_more`，且只包含本次检索产生的事件。JPEG 预览异步生成并按事件缓存；动图路由按需生成经过校验的有界 3 秒 WebP 悬停预览。全部文件均在派生媒体根目录原子写入。
+实际目标区域恰好是一个稳定摄像机 ID；浏览器按 NVR 分组并用单选方式展示摄像机画面，因此不再提供录像机或自由文本区域筛选。`channel_ids` 必须恰好有一项。`event_types` 也必须恰好包含 `motion`、`video_tamper`、`line_crossing` 或 `region_intrusion` 中的一项；连续录像、Smart 兜底标签和多事件类型请求都会被拒绝。Preset 保存一个摄像机 ID 与一个事件标签。作业读取有界历史报警日志，并在同摄像机、同类型、最长一小时范围内配对开始/停止条目。有配对时保存真实 `event_duration_ms`；无法配对时保存 `null` 及 `duration_source: "unknown"`。`result.truncated` 表示适配器达到上限。只有生成预览/片段时才执行录像检索。`search-jobs/{job_id}/results?limit=12&offset=0` 返回有界分页、总数和 `has_more`，且只包含本次检索产生的事件。JPEG 预览异步生成并按事件缓存；预览和动图状态响应包含 `0` 到 `1` 的归一化作业 `progress`，它表示处理阶段而非上游字节计数；动图路由按需生成经过校验的有界 3 秒 WebP 悬停预览。全部文件均在派生媒体根目录原子写入。
 
 Trace 会话持久保存一个摄像机/事件类型范围，并只接受一个有界时间迭代。先用 `{"channel_ids":["channel_01"],"event_types":["motion"]}` 创建会话，再追加 `{"from":"2026-08-12T18:00:00+08:00","to":"2026-08-13T06:00:00+08:00","label":"时间范围"}`。重复相同时间窗保持幂等；第二个不同时间窗返回 `TRACE_SESSION_WINDOW_FIXED`，客户端必须新建检索。为保持 schema 兼容，持久化作业 kind 仍是 `recording_search`，但事件来源已经是历史报警日志。
 
@@ -128,6 +128,7 @@ POST   /api/v1/clips
 GET    /api/v1/clips
 GET    /api/v1/clips/{clip_id}
 GET    /api/v1/clips/{clip_id}/content
+POST   /api/v1/clips/{clip_id}/share
 DELETE /api/v1/clips/{clip_id}
 GET    /api/v1/jobs
 GET    /api/v1/jobs/{job_id}
@@ -140,12 +141,14 @@ POST   /api/v1/jobs/{job_id}/cancel
 {
   "bookmark_id": "interval_01",
   "search_job_id": "job_search_01",
-  "window_override": { "pre_roll_ms": 5000, "post_roll_ms": 10000, "max_duration_ms": 60000 },
+  "window_override": { "pre_roll_ms": 0, "post_roll_ms": 0 },
   "audio_policy": "prefer"
 }
 ```
 
-按书签创建时，公开 Clip 记录包含安全的 `origin` 字段：书签 ID、检索作业 ID、区域标签、通道标签、事件类型/原始分类、事件时间窗、`time_basis: "nvr_index"`、是否因相邻事件裁剪上下文，以及是否应用了显式候选时长上限。同一摄像机/检索中的相邻非重叠事件只在仍位于事件间隙内的整秒中点裁剪前后上下文；整秒量化与已实测 NVR 录像索引精度一致。事件本体绝不会被裁掉，真实事件本体重叠仍保留重叠。响应绝不包含 RTSP locator 或凭据。显式通道/时间窗出片的 `origin` 为 `null`。
+按书签创建时，默认行为和事件检索界面都严格按索引事件开始/结束区间导出（`pre_roll_ms=0`、`post_roll_ms=0`），不隐式限制时长。非零上下文缓冲继续作为显式 API/设置选项。公开 Clip 记录包含安全的 `origin` 字段：书签 ID、检索作业 ID、区域标签、通道标签、事件类型/原始分类、事件时间窗、`time_basis: "nvr_index"`、是否裁剪了显式请求的相邻事件上下文，以及是否应用了显式候选时长上限。同一摄像机/检索中的相邻非重叠事件只在仍位于事件间隙内的整秒中点裁剪非零前后上下文；事件本体绝不会被裁掉，真实事件本体重叠仍保留重叠。响应绝不包含 RTSP locator 或凭据。显式通道/时间窗出片的 `origin` 为 `null`。Clip 记录包含阶段 `progress`；浏览器在下载就绪 MP4 时另外计算实际字节进度。
+
+`clips/{clip_id}/share` 是受 ADR-0006 约束的本机用户显式操作。它启动或复用独立的私有网卡监听器，返回本地生成的能力 URL 及过期时间。一个仅存内存的 256 位令牌在 15 分钟内只允许通过 `GET`/`HEAD` 访问极简页面和这一条已就绪片段的有界 Range 内容；不会暴露回环 API、NVR 地址、凭据或文件路径。二维码完全在本地生成，URL 不会发送给第三方二维码服务。
 
 内部事件与 Clip 时间继续使用 UTC。进入 FFmpeg 前，先把每个 locator 的宽录像范围替换为实际解析出的请求媒体片段边界。对于经实测会把紧凑 RTSP 回放参数当作设备本地墙上时间解释（尽管带 `Z` 后缀）的海康固件，媒体边界随后只使用实测设备偏移转换这些参数；公开事件/Clip 时间戳不做平移。画面内摄像机 OSD 水印使用摄像机自身时钟，可能与 NVR 索引事件时间不同；TraceCue 会说明差异，而不是猜测校正。
 

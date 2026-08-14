@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 MIGRATION_1 = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -285,11 +285,18 @@ CREATE TABLE trace_event_reviews (
 CREATE INDEX trace_reviews_session_state ON trace_event_reviews(session_id, state, updated_ms);
 """
 
+MIGRATION_6 = """
+-- Event candidate exports now match the indexed event interval by default.
+-- Reset only untouched legacy defaults; preserve explicit user customization.
+UPDATE settings SET value_json='0' WHERE key='pre_roll_ms' AND value_json='5000';
+UPDATE settings SET value_json='0' WHERE key='post_roll_ms' AND value_json='10000';
+"""
+
 
 DEFAULT_SETTINGS = {
     "clip_quota_bytes": 10 * 1024 * 1024 * 1024,
-    "pre_roll_ms": 5_000,
-    "post_roll_ms": 10_000,
+    "pre_roll_ms": 0,
+    "post_roll_ms": 0,
     "preferred_port": 8765,
     "night_start_hour": 18,
     "night_end_hour": 6,
@@ -346,6 +353,13 @@ class Database:
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
                     (5, now_ms),
+                )
+                current = 5
+            if current < 6:
+                connection.executescript(MIGRATION_6)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
+                    (6, now_ms),
                 )
             for key, value in DEFAULT_SETTINGS.items():
                 connection.execute(

@@ -9,7 +9,7 @@
 ## 安全边界
 
 - TraceCue 默认只监听回环地址。
-- 局域网开放不属于 MVP；实现时必须同时加入鉴权、CSRF 防护、Origin 检查，以及明确的防火墙/安装流程。
+- 一般局域网 API 开放不属于 MVP；实现时必须同时加入鉴权、CSRF 防护、Origin 检查，以及明确的防火墙/安装流程。ADR-0006 的窄范围例外是用户显式开启、仅限一个已生成片段的 256 位只读能力链接：令牌只存内存、15 分钟过期、仅接受 GET/HEAD、不记录令牌日志，也不暴露 API 或 NVR 数据。
 - NVR 凭据保存在 Windows Credential Manager 或 DPAPI 保护的存储中，禁止明文写入 SQLite。
 - 日志和支持包必须脱敏认证头、密码、客户隐私数据及带凭据 URL。
 - 导入的 timeline 文档和 NVR XML/JSON 都是不可信输入。

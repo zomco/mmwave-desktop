@@ -25,7 +25,7 @@ ADR-0004 licenses the complete monorepo under MIT. `desktop`, `gateway`, `engine
 - NVR-only: desktop can run on demand without gateway.
 - Historical sensor timeline: an always-on producer is mandatory; it may be gateway or future capable firmware.
 - Multi-radar fusion is expected to require gateway-class compute.
-- Cloud relay, remote access and LAN exposure are separate future threat models.
+- Cloud relay, remote administration and general LAN exposure are separate future threat models. ADR-0006 permits only an explicit, short-lived, token-scoped read-only share of one generated clip.
 
 ## Explicitly rejected or deferred directions
 

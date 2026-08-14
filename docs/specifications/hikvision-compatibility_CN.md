@@ -55,6 +55,8 @@ TraceCue 不再分发或逆向海康私有 SADP 实现。它先发送标准 ONVI
 
 海康文档使用 `.../Streaming/channels/<channel><stream>` 表示实时主/子码流，并使用紧凑 `starttime`/`endtime` 回放 URL。TraceCue 在调用 FFmpeg 前，会把录像检索返回的宽边界替换为实际解析出的请求片段。实测部分固件会把带 `Z` 后缀的紧凑回放参数按设备本地墙上时间解释；TraceCue 随后只在此 locator 边界应用设备实测 UTC 偏移，内部/公开 Interval 时间继续使用 UTC。画面 OSD 水印由摄像机时钟生成；IPC 时间同步不健康时仍可能与 NVR 事件索引不同。这属于逐固件行为，不是通用时区规则：[海康 RTSP URL 说明](https://www.hikvision.com/content/dam/hikvision/ca/bulletin/technical-bulletin/technical-article/tb_rtsp_and_http_urls_120915us.pdf)、[海康 ISAPI 搜索/下载示例](https://www.hikvisioneurope.com/eu/portal/portal/Technology%20Partner%20Program/03-How%20to/How%20to%20search%20and%20download%20the%20video%20file%20from%20NVR%20via%20ISAPI.pdf)。
 
+事件候选默认严格请求报警日志配对出的开始/结束区间；前后上下文改为显式可选。
+
 ## 经授权硬件观测（2026-08-13）
 
 `DS-7808NB-K1/8P` 固件 `V4.30.090` 返回 8 个在线通道及主/子 track 身份，录像检索/回放、历史报警日志和事件配置均可认证读取。移动侦测使用 `18 × 22` 十六进制 grid map。`/ISAPI/Smart/LineDetection/1` 与 `/ISAPI/Smart/FieldDetection/1` 可读且已启用；当前启用的区域入侵使用底边原点纵坐标，而原先错误调用的 `.../101` 正是集成缺陷。通道 2 的有界越界实测在 `21:55:47Z` 返回 `lineDetectionStart`、在 `21:55:56Z` 返回 `lineDetectionStop`，证明事件时长为 9 秒。录像检索返回精确请求 UTC 范围及匹配的回放参数。导出画面 OSD 比 NVR 索引时间领先约 4 分 12 秒，由此排除 TraceCue 八小时时区转换错误，定位为摄像机/NVR 时钟未同步。已保存账号访问两个 RTSP 实时路径和 HTTP preview 路径时均返回 403，但录像检索/回放仍获授权；有界最近录像回退可生成摄像机识别 JPEG，缓存预览与 H.264 导出路径也经过硬件验证。日志保留期与结果截断仍是后续需要量化的固件行为。仓库未保存客户画面、地址、序列号、原始日志正文或凭据。

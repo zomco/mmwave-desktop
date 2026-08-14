@@ -84,14 +84,28 @@ def test_schema_v4_invalidates_pre_timezone_preview_cache(tmp_path: Path) -> Non
         "trace_sessions",
     ):
         database.execute(f"DROP TABLE {table}")
-    database.execute("DELETE FROM schema_migrations WHERE version IN (4, 5)")
+    database.execute("DELETE FROM schema_migrations WHERE version IN (4, 5, 6)")
 
     database.initialize(200)
 
     assert database.one(
         "SELECT status, relative_path FROM event_previews WHERE interval_id='interval_1'"
     ) == {"status": "failed", "relative_path": None}
-    assert database.one("SELECT MAX(version) AS version FROM schema_migrations") == {"version": 5}
+    assert database.one("SELECT MAX(version) AS version FROM schema_migrations") == {"version": 6}
+
+
+def test_schema_v6_resets_only_untouched_context_padding_defaults(tmp_path: Path) -> None:
+    database = Database(tmp_path / "settings-migration.sqlite")
+    database.initialize(100)
+    database.execute("DELETE FROM schema_migrations WHERE version=6")
+    database.execute("UPDATE settings SET value_json='5000' WHERE key='pre_roll_ms'")
+    database.execute("UPDATE settings SET value_json='2500' WHERE key='post_roll_ms'")
+
+    database.initialize(200)
+
+    settings = database.settings()
+    assert settings["pre_roll_ms"] == 0
+    assert settings["post_roll_ms"] == 2500
 
 
 @pytest.mark.skipif(os.name != "nt", reason="DPAPI is Windows-only")

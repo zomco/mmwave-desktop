@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { TraceTimelineEvent } from "./types";
 import { Button } from "./ui";
 
@@ -70,12 +70,30 @@ export function EventTimeline({
 
   useEffect(() => setViewport(base), [base.start, base.end]);
 
-  const visible = useMemo(() => events.map((event, index) => ({
+  useEffect(() => {
+    const element = surface.current;
+    if (!element) return;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = element.getBoundingClientRect();
+      setViewport((current) => zoomTimelineViewport(
+        current,
+        base,
+        (event.clientX - rect.left) / rect.width,
+        event.deltaY,
+      ));
+    };
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, [base]);
+
+  const visible = useMemo(() => events.map((event) => ({
     event,
-    index,
     start: new Date(event.start_at).getTime(),
     end: new Date(event.end_at).getTime(),
-  })).filter((item) => item.start < viewport.end && item.end > viewport.start), [events, viewport]);
+  })).filter((item) => item.start < viewport.end && item.end > viewport.start)
+    .sort((left, right) => (right.end - right.start) - (left.end - left.start)), [events, viewport]);
 
   const density = useMemo(() => {
     const bins = new Array(120).fill(0) as number[];
@@ -101,13 +119,6 @@ export function EventTimeline({
     if (selection) onSelect({ start_at: new Date(selection.start).toISOString(), end_at: new Date(selection.end).toISOString() });
   }
 
-  function wheel(event: WheelEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const rect = surface.current?.getBoundingClientRect();
-    if (!rect) return;
-    setViewport((current) => zoomTimelineViewport(current, base, (event.clientX - rect.left) / rect.width, event.deltaY));
-  }
-
   const span = viewport.end - viewport.start;
   const selectedStart = selected ? new Date(selected.start_at).getTime() : null;
   const selectedEnd = selected ? new Date(selected.end_at).getTime() : null;
@@ -118,13 +129,15 @@ export function EventTimeline({
 
   return <div>
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div><strong className="text-sm">事件时间轴</strong><p className="mt-1 text-xs text-slate-500">点击事件条，或拖放绘制子时间区间；在时间轴上滚动可围绕光标缩放。</p></div>
+      <div><strong className="text-sm">事件时间轴</strong><p className="mt-1 text-xs text-slate-500">所有事件绘制在同一轨道；点击事件条或拖放子区间。在时间轴上滚动只缩放时间轴，不滚动页面。</p></div>
       <Button type="button" variant="ghost" onClick={() => setViewport(base)} disabled={viewport.start === base.start && viewport.end === base.end}>复位缩放</Button>
     </div>
     <div
       ref={surface}
-      className="relative mt-3 h-28 touch-none select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-950"
-      onWheel={wheel}
+      data-testid="event-timeline-surface"
+      role="application"
+      aria-label="事件时间轴交互区"
+      className="relative mt-3 h-24 touch-none select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-950"
       onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const value = coordinate(event); setDragStart(value); setDragCurrent(value); }}
       onPointerMove={(event) => { if (dragStart !== null) setDragCurrent(coordinate(event)); }}
       onPointerUp={finishDrag}
@@ -132,7 +145,7 @@ export function EventTimeline({
     >
       <div className="absolute inset-x-3 top-2 bottom-7">
         {density.bins.map((count, index) => count > 0 && <span key={index} className="absolute bottom-0 top-0 bg-emerald-400" style={{ left: `${index / density.bins.length * 100}%`, width: `${100 / density.bins.length}%`, opacity: 0.04 + count / density.max * 0.12 }} />)}
-        {visible.map(({ event, index, start, end }) => {
+        {visible.map(({ event, start, end }) => {
           const left = Math.max(0, (start - viewport.start) / span * 100);
           const width = Math.max(0.35, (Math.min(end, viewport.end) - Math.max(start, viewport.start)) / span * 100);
           const bin = Math.max(0, Math.min(119, Math.floor(((start - viewport.start) / span) * 120)));
@@ -142,8 +155,8 @@ export function EventTimeline({
             key={event.id}
             title={`${timelineLabel(start, span)} – ${timelineLabel(end, span)}`}
             aria-label={`选择 ${timelineLabel(start, span)} 开始的事件`}
-            className="absolute h-4 rounded-sm border border-emerald-100/70 shadow-sm transition hover:z-20 hover:bg-amber-300"
-            style={{ left: `${left}%`, width: `${width}%`, top: `${8 + index % 3 * 18}px`, backgroundColor: `rgba(16, 185, 129, ${0.48 + intensity * 0.48})` }}
+            className="absolute top-3 h-7 rounded-sm border border-emerald-100/70 shadow-sm transition hover:z-20 hover:bg-amber-300"
+            style={{ left: `${left}%`, width: `${width}%`, backgroundColor: `rgba(16, 185, 129, ${0.48 + intensity * 0.48})` }}
             onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
             onClick={() => onSelect({ start_at: event.start_at, end_at: event.end_at })}
           />;

@@ -62,6 +62,7 @@ def create_app(
         finally:
             if start_worker:
                 application_services.worker.stop()
+            application_services.stop_network_shares()
 
     app = FastAPI(
         title="TraceCue Desktop API",
@@ -383,6 +384,10 @@ def create_app(
                 "Content-Length": str(length),
             },
         )
+
+    @app.post(api + "/clips/{clip_id}/share", status_code=201)
+    def create_clip_share(clip_id: str) -> dict:
+        return application_services.create_clip_share(clip_id)
 
     @app.delete(api + "/clips/{clip_id}", status_code=204)
     def delete_clip(clip_id: str) -> Response:

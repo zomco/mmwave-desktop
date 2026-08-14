@@ -83,8 +83,8 @@ class DiscoveryRequest(ApiModel):
 
 
 class WindowOverride(ApiModel):
-    pre_roll_ms: int = Field(default=5_000, ge=0, le=3_600_000)
-    post_roll_ms: int = Field(default=10_000, ge=0, le=3_600_000)
+    pre_roll_ms: int = Field(default=0, ge=0, le=3_600_000)
+    post_roll_ms: int = Field(default=0, ge=0, le=3_600_000)
     max_duration_ms: int | None = Field(default=None, ge=1_000, le=600_000)
 
 

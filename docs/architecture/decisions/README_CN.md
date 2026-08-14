@@ -9,5 +9,6 @@
 | [0003](0003-nvr-authoritative-media_CN.md) | 已接受 | NVR 保持为权威媒体存储 |
 | [0004](0004-licensing-before-contributions_CN.md) | 已接受 | 整个单仓采用 MIT，并独立履行第三方许可证义务 |
 | [0005](0005-initial-implementation-stack_CN.md) | 待决 | 采用初始 Python/FastAPI、React/TypeScript 与 FFmpeg 技术栈 |
+| [0006](0006-temporary-lan-clip-sharing_CN.md) | 已接受 | 允许用户显式开启仅限单个已生成片段、带令牌的临时局域网分享 |
 
 ADR 使用不可变编号。若要改变已接受结论，应新增 ADR 取代，而不是静默改写原结论。

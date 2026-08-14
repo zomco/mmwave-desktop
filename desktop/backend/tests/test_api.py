@@ -22,7 +22,7 @@ def test_status_reports_schema_and_media_without_paths(services) -> None:
     response = client(services).get("/api/v1/status")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == 5
+    assert payload["schema_version"] == 6
     assert payload["bind_host"] == "127.0.0.1"
     assert "data_dir" not in json.dumps(payload)
 
@@ -84,6 +84,7 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert services.worker.process_once()
     ready_preview = api.get(f"/api/v1/bookmarks/{bookmarks[0]['id']}/preview").json()
     assert ready_preview["status"] == "ready"
+    assert ready_preview["progress"] == 1
     assert api.get(ready_preview["content_url"]).content.startswith(b"\xff\xd8\xff")
 
     animation = api.post(f"/api/v1/bookmarks/{bookmarks[0]['id']}/animation")
@@ -105,6 +106,7 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert services.worker.process_once()
     ready = api.get(f"/api/v1/clips/{clip.json()['id']}").json()
     assert ready["status"] == "ready"
+    assert ready["progress"] == 1
     assert ready["origin"]["bookmark_id"] == bookmarks[0]["id"]
     assert ready["origin"]["search_job_id"] == search.json()["id"]
     assert ready["origin"]["classification"] == "log.hikvision.com/Alarm/motionStart/1"
@@ -114,6 +116,14 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert ready["requested_window"] == {
         "start_at": "2026-08-12T08:00:00.000Z",
         "end_at": "2026-08-12T08:00:05.000Z",
+    }
+
+    share = api.post(f"/api/v1/clips/{ready['id']}/share")
+    assert share.status_code == 201
+    assert share.json() == {
+        "clip_id": ready["id"],
+        "url": "http://192.0.2.55:54321/s/fixture-token",
+        "expires_at": "2026-08-12T10:01:40.000Z",
     }
 
     ranged = api.get(ready["content_url"], headers={"Range": "bytes=10-19"})

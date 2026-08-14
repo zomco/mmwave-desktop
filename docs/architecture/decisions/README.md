@@ -9,5 +9,6 @@
 | [0003](0003-nvr-authoritative-media.md) | Accepted | Keep NVR as authoritative media storage |
 | [0004](0004-licensing-before-contributions.md) | Accepted | License the complete monorepo under MIT; keep third-party obligations separate |
 | [0005](0005-initial-implementation-stack.md) | Proposed | Adopt the initial Python/FastAPI, React/TypeScript and FFmpeg stack |
+| [0006](0006-temporary-lan-clip-sharing.md) | Accepted | Allow explicit, token-scoped temporary LAN sharing of one generated clip |
 
 Use immutable numbered records. Supersede an accepted ADR with a new ADR instead of silently rewriting its conclusion.

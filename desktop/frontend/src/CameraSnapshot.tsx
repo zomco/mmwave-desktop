@@ -23,8 +23,7 @@ export function CameraSnapshot({ channel, overlays = [], eager = true }: { chann
   useEffect(() => {
     mounted.current = true;
     if (eager) void load();
-    const timer = eager ? window.setInterval(() => void load(), 30_000) : undefined;
-    return () => { mounted.current = false; if (timer) window.clearInterval(timer); };
+    return () => { mounted.current = false; };
   }, [eager, load]);
 
   return <div className="relative aspect-video overflow-hidden rounded-xl bg-[#142e29]">

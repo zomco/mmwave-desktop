@@ -9,7 +9,7 @@ Do not disclose a vulnerability in a public issue. Use GitHub private vulnerabil
 ## Security boundaries
 
 - TraceCue defaults to loopback-only access.
-- LAN exposure is out of MVP scope and must add authentication, CSRF protection, origin checks and an explicit firewall/install flow.
+- General LAN API exposure is out of MVP scope and must add authentication, CSRF protection, origin checks and an explicit firewall/install flow. ADR-0006's narrow exception is an explicit, read-only, 256-bit capability URL for one generated clip: it is memory-only, expires after 15 minutes, accepts only GET/HEAD, emits no token log and exposes no API or NVR data.
 - NVR credentials belong in Windows Credential Manager or a DPAPI-protected store, never plaintext SQLite.
 - Logs and support bundles must redact authorization headers, passwords, private customer data and credential-bearing URLs.
 - Imported timeline documents and NVR XML/JSON are untrusted input.

@@ -14,7 +14,7 @@ Data:     %LocalAppData%\TraceCue
 Clips:    %USERPROFILE%\Videos\TraceCue
 ```
 
-The installer should not require elevation, enable startup, open a firewall port or delete user data by default. Uninstall offers a separate explicit data-removal choice.
+The installer should not require elevation, enable startup, open a firewall port or delete user data by default. ADR-0006 temporary clip sharing is invoked explicitly at runtime; Windows may request private-network permission then, but the installer never pre-authorizes a port. Uninstall offers a separate explicit data-removal choice.
 
 ## Process behavior
 

@@ -9,6 +9,7 @@ Direct dependencies are deliberately small. Exact development versions live in `
 | FastAPI / Starlette / Pydantic | Typed same-origin HTTP API and validation | MIT / BSD-3-Clause / MIT | Widely used, active upstreams; isolate framework code in Desktop so Engine/Gateway remain independent |
 | Uvicorn | Loopback ASGI server | BSD-3-Clause | Mature and replaceable behind ASGI; no LAN exposure is enabled |
 | React / React DOM | Desktop SPA state and accessible components | MIT | Mature upstream; only same-origin browser UI depends on it |
+| qrcode | Generate temporary clip-share QR images entirely in the local SPA | MIT | Mature, small browser library with no network service; exact npm lock retained and generated data never leaves the page |
 | Vite / TypeScript | Deterministic frontend build and static checking | MIT / Apache-2.0 | Active upstreams; build-time only, exact lock retained |
 | Tailwind CSS / Tailwind Vite plugin | Utility-first UI styling that developers can adjust in colocated React markup | MIT / MIT | Build-time only, active upstream, exact npm lock retained; no runtime service or network dependency |
 | Vitest | Frontend invariant tests | MIT | Build/test-only; small tests can migrate if upstream maintenance changes |

@@ -32,6 +32,7 @@ from .database import Database
 from .errors import AppError, MediaError
 from .media import FFmpegRunner
 from .secrets import SecretStore, WindowsDpapiSecretStore
+from .sharing import LanClipShareServer
 
 
 def now_ms() -> int:
@@ -109,6 +110,7 @@ class DesktopServices:
         adapter_factory: Callable[[ConnectionConfig], HikvisionAdapter] | None = None,
         media_runner: FFmpegRunner | None = None,
         device_discoverer: Callable[[float], tuple[Any, ...]] | None = None,
+        share_server: Any | None = None,
     ):
         self.config = config
         config.prepare()
@@ -120,6 +122,7 @@ class DesktopServices:
             config.ffmpeg_path, config.ffprobe_path, config.clip_dir
         )
         self.device_discoverer = device_discoverer or discover_devices
+        self.share_server = share_server or LanClipShareServer()
         self.worker = JobWorker(self)
 
     def discover_nvrs(self, timeout_seconds: float) -> list[dict[str, Any]]:
@@ -1164,6 +1167,16 @@ class DesktopServices:
         path = (self.config.clip_dir / relative_path).resolve()
         return path.is_relative_to(self.config.clip_dir.resolve()) and path.is_file()
 
+    def _set_job_progress(self, job_id: str, progress: float) -> None:
+        self.database.execute(
+            "UPDATE jobs SET progress=?, updated_ms=? WHERE id=?",
+            (max(0.0, min(1.0, progress)), now_ms(), job_id),
+        )
+
+    def _job_progress(self, job_id: str) -> float:
+        row = self.database.one("SELECT progress FROM jobs WHERE id=?", (job_id,))
+        return float(row["progress"]) if row else 0.0
+
     def enqueue_clip(self, values: dict[str, Any]) -> dict[str, Any]:
         settings = self.database.settings()
         bookmark_id = values.get("bookmark_id")
@@ -1295,6 +1308,42 @@ class DesktopServices:
         if not row:
             raise AppError("MEDIA_CLIP_NOT_FOUND", "Clip was not found.", 404)
         return self._public_clip(row)
+
+    def create_clip_share(self, clip_id: str) -> dict[str, Any]:
+        path, _size = self.clip_file(clip_id)
+        row = self.database.one(
+            """
+            SELECT c.*, n.host, COALESCE(ch.alias, ch.device_name) AS channel_label
+            FROM clips c
+            JOIN nvr_channels ch ON ch.id=c.nvr_channel_id
+            JOIN nvrs n ON n.id=ch.nvr_id
+            WHERE c.id=?
+            """,
+            (clip_id,),
+        )
+        if not row:
+            raise AppError("MEDIA_CLIP_NOT_FOUND", "Clip was not found.", 404)
+        try:
+            share = self.share_server.create_share(
+                clip_id=clip_id,
+                path=path,
+                title=row["channel_label"] or "TraceCue video clip",
+                route_target=row["host"],
+            )
+        except OSError as exc:
+            raise AppError(
+                "LAN_SHARE_UNAVAILABLE",
+                "A private LAN address is not available for temporary clip sharing.",
+                409,
+            ) from exc
+        return {
+            "clip_id": clip_id,
+            "url": share["url"],
+            "expires_at": rfc3339(int(share["expires_at_ms"])),
+        }
+
+    def stop_network_shares(self) -> None:
+        self.share_server.stop()
 
     def clip_file(self, clip_id: str) -> tuple[Path, int]:
         row = self.database.one("SELECT * FROM clips WHERE id=?", (clip_id,))
@@ -1820,6 +1869,7 @@ class DesktopServices:
         }
 
     def _run_event_preview(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._set_job_progress(job_id, 0.1)
         self.database.execute(
             "UPDATE event_previews SET status='generating', updated_ms=? WHERE interval_id=?",
             (now_ms(), payload["interval_id"]),
@@ -1833,6 +1883,7 @@ class DesktopServices:
             from_utc_millis(payload["start_ms"]), from_utc_millis(payload["end_ms"]),
         )
         adapter = self._adapter_for_row(nvr)
+        self._set_job_progress(job_id, 0.3)
         try:
             spans = adapter.search_all_recordings(query)
             resolution = adapter.resolve_media(spans, query.start_at, query.end_at)
@@ -1840,6 +1891,7 @@ class DesktopServices:
             raise AppError(exc.code, "NVR event preview could not be resolved.", 502) from exc
         if not resolution.playback_segments:
             raise AppError("RECORDING_NOT_FOUND", "No NVR recording covers the event preview.", 409)
+        self._set_job_progress(job_id, 0.6)
         username, password = self.secret_store.get(nvr["secret_ref"])
         preview_id = stable_id("preview", payload["interval_id"])
         segment = resolution.playback_segments[0]
@@ -1852,6 +1904,7 @@ class DesktopServices:
             password=password,
             cancel_requested=lambda: self._cancel_requested(job_id),
         )
+        self._set_job_progress(job_id, 0.95)
         relative_path = path.resolve().relative_to(self.config.clip_dir.resolve()).as_posix()
         self.database.execute(
             "UPDATE event_previews SET status='ready', relative_path=?, updated_ms=? WHERE interval_id=?",
@@ -1860,6 +1913,7 @@ class DesktopServices:
         return {"interval_id": payload["interval_id"]}
 
     def _run_event_animation(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._set_job_progress(job_id, 0.1)
         self.database.execute(
             "UPDATE event_animations SET status='generating', updated_ms=? WHERE interval_id=?",
             (now_ms(), payload["interval_id"]),
@@ -1873,6 +1927,7 @@ class DesktopServices:
             from_utc_millis(payload["start_ms"]), from_utc_millis(payload["end_ms"]),
         )
         adapter = self._adapter_for_row(nvr)
+        self._set_job_progress(job_id, 0.3)
         try:
             spans = adapter.search_all_recordings(query)
             resolution = adapter.resolve_media(spans, query.start_at, query.end_at)
@@ -1880,6 +1935,7 @@ class DesktopServices:
             raise AppError(exc.code, "NVR hover preview could not be resolved.", 502) from exc
         if not resolution.playback_segments:
             raise AppError("RECORDING_NOT_FOUND", "No NVR recording covers the hover preview.", 409)
+        self._set_job_progress(job_id, 0.6)
         username, password = self.secret_store.get(nvr["secret_ref"])
         segment = resolution.playback_segments[0]
         path = self.media_runner.generate_animation(
@@ -1892,6 +1948,7 @@ class DesktopServices:
             duration_seconds=3,
             cancel_requested=lambda: self._cancel_requested(job_id),
         )
+        self._set_job_progress(job_id, 0.95)
         relative_path = path.resolve().relative_to(self.config.clip_dir.resolve()).as_posix()
         self.database.execute(
             "UPDATE event_animations SET status='ready', relative_path=?, updated_ms=? WHERE interval_id=?",
@@ -1963,6 +2020,7 @@ class DesktopServices:
         return {"channel_id": payload["channel_id"]}
 
     def _run_clip(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._set_job_progress(job_id, 0.08)
         channel = self._channel_row(payload["channel_id"])
         nvr = self._nvr_row(channel["nvr_id"])
         if not channel["primary_track_id"]:
@@ -1975,6 +2033,7 @@ class DesktopServices:
             from_utc_millis(payload["end_ms"]),
         )
         adapter = self._adapter_for_row(nvr)
+        self._set_job_progress(job_id, 0.25)
         try:
             spans = adapter.search_all_recordings(query)
             resolution = adapter.resolve_media(spans, query.start_at, query.end_at)
@@ -1987,6 +2046,7 @@ class DesktopServices:
                 409,
                 {"coverage": "partial", "missing_spans": jsonable(resolution.missing_spans)},
             )
+        self._set_job_progress(job_id, 0.5)
         username, password = self.secret_store.get(nvr["secret_ref"])
         result = self.media_runner.generate(
             clip_id=payload["clip_id"],
@@ -2002,6 +2062,7 @@ class DesktopServices:
             max_duration_seconds=(payload["end_ms"] - payload["start_ms"]) / 1000,
             cancel_requested=lambda: self._cancel_requested(job_id),
         )
+        self._set_job_progress(job_id, 0.92)
         if self._cancel_requested(job_id):
             result.path.unlink(missing_ok=True)
             raise AppError("JOB_CANCELLED", "Job was cancelled.", 409)
@@ -2311,8 +2372,7 @@ class DesktopServices:
             "finished_at": rfc3339(row["finished_ms"]),
         }
 
-    @staticmethod
-    def _public_clip(row: dict[str, Any]) -> dict[str, Any]:
+    def _public_clip(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "id": row["id"],
             "job_id": row["job_id"],
@@ -2326,6 +2386,7 @@ class DesktopServices:
                 "end_at": rfc3339(row["actual_end_ms"]),
             } if row["actual_start_ms"] is not None else None,
             "status": row["status"],
+            "progress": self._job_progress(row["job_id"]),
             "video_codec": row["video_codec"],
             "audio_codec": row["audio_codec"],
             "size_bytes": row["size_bytes"],
@@ -2334,24 +2395,24 @@ class DesktopServices:
             "origin": json.loads(row["origin_json"]) if row.get("origin_json") else None,
         }
 
-    @staticmethod
-    def _public_event_preview(row: dict[str, Any]) -> dict[str, Any]:
+    def _public_event_preview(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "bookmark_id": row["interval_id"],
             "job_id": row["job_id"],
             "status": row["status"],
+            "progress": self._job_progress(row["job_id"]),
             "content_url": (
                 f"/api/v1/bookmarks/{row['interval_id']}/preview/content"
                 if row["status"] == "ready" else None
             ),
         }
 
-    @staticmethod
-    def _public_event_animation(row: dict[str, Any]) -> dict[str, Any]:
+    def _public_event_animation(self, row: dict[str, Any]) -> dict[str, Any]:
         return {
             "bookmark_id": row["interval_id"],
             "job_id": row["job_id"],
             "status": row["status"],
+            "progress": self._job_progress(row["job_id"]),
             "content_url": (
                 f"/api/v1/bookmarks/{row['interval_id']}/animation/content"
                 if row["status"] == "ready" else None

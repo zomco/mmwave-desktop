@@ -139,6 +139,16 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
     )).length;
   }
 
+  function selectedRuleOverlays(channel: Channel) {
+    if (!eventType || selectedChannel !== channel.id) return [];
+    return (auditsByNvr[channel.nvr_id]?.rules ?? [])
+      .filter((rule) => rule.channel_external_id === channel.external_channel_id
+        && rule.event_type === eventType
+        && rule.state === "supported"
+        && rule.enabled !== false)
+      .flatMap((rule) => rule.overlays);
+  }
+
   async function loadResults(
     sessionId: string,
     options: {
@@ -310,7 +320,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       await post("/clips", {
         bookmark_id: item.id,
         search_job_id: item.search_job_id,
-        window_override: { pre_roll_ms: 5_000, post_roll_ms: 10_000, max_duration_ms: 60_000 },
+        window_override: { pre_roll_ms: 0, post_roll_ms: 0 },
         audio_policy: "prefer",
       });
       await patch(`/trace-sessions/${activeSession.id}/events/${item.id}`, { state: "candidate" });
@@ -385,7 +395,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
 
       <fieldset className="mt-6"><legend className="mb-3 text-sm font-semibold text-slate-700">2. 选择一个摄像机</legend><div className="space-y-5">
         {nvrs.data?.map((nvr) => { const visibleChannels = (channelsByNvr[nvr.id] ?? []).filter((channel) => eligibleChannelIds.has(channel.id)); return <div key={nvr.id}><h3 className="mb-2 text-sm font-bold">{nvr.name} <span className="font-normal text-slate-500">· {visibleChannels.length} 台可用</span></h3>{visibleChannels.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {visibleChannels.map((channel) => <label key={channel.id} className={`cursor-pointer overflow-hidden rounded-2xl border bg-white transition ${selectedChannel === channel.id ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200"}`}><div className="relative"><CameraSnapshot channel={channel} /><input className="absolute left-3 top-3 h-5 w-5 accent-emerald-700" type="radio" name="trace-camera" checked={selectedChannel === channel.id} onChange={() => setSelectedChannel(channel.id)} /></div><div className="p-3"><strong className="block text-sm">{channel.alias || channel.device_name || "未命名摄像机"}</strong><small className="text-slate-500">{channel.online ? "在线" : "状态未知 / 离线"} · 通道 {channel.external_channel_id}</small></div></label>)}
+          {visibleChannels.map((channel) => { const overlays = selectedRuleOverlays(channel); return <label key={channel.id} className={`cursor-pointer overflow-hidden rounded-2xl border bg-white transition ${selectedChannel === channel.id ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200"}`}><div className="relative"><CameraSnapshot channel={channel} overlays={overlays} /><input className="absolute left-3 top-3 h-5 w-5 accent-emerald-700" type="radio" name="trace-camera" checked={selectedChannel === channel.id} onChange={() => setSelectedChannel(channel.id)} />{overlays.length > 0 && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-semibold text-white">正在显示{eventPresentation(eventType)}规则边界</span>}</div><div className="p-3"><strong className="block text-sm">{channel.alias || channel.device_name || "未命名摄像机"}</strong><small className="text-slate-500">{channel.online ? "在线" : "状态未知 / 离线"} · 通道 {channel.external_channel_id}</small></div></label>; })}
         </div> : <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">这台 NVR 没有摄像机具备当前所选的全部事件能力。可到设备中心重新扫描事件配置。</div>}</div>; })}
       </div></fieldset>
 
@@ -461,7 +471,7 @@ function EventCard({ item, cameraName, preview, animation, onHover, onReview, on
   const reviewLabel = reviewPresentation(review);
   return <article className={`${card} overflow-hidden ${review === "candidate" ? "ring-2 ring-emerald-500" : review === "excluded" ? "opacity-70" : ""}`}>
     <div className="relative aspect-video bg-[#142e29]" onMouseEnter={() => { setHovering(true); onHover(); }} onMouseLeave={() => setHovering(false)}>
-      {image?.status === "ready" && image.content_url ? <img src={`${image.content_url}?v=${encodeURIComponent(image.job_id)}`} className="h-full w-full object-cover" alt={`${cameraName}事件预览`} /> : <div className="grid h-full place-items-center text-emerald-100/70"><Spinner label={hovering ? "生成 3 秒悬停预览" : "自动读取事件画面"} /></div>}
+      {image?.status === "ready" && image.content_url ? <img src={`${image.content_url}?v=${encodeURIComponent(image.job_id)}`} className="h-full w-full object-cover" alt={`${cameraName}事件预览`} /> : <div className="grid h-full place-items-center px-8 text-emerald-100/70"><div className="w-full"><Spinner label={hovering ? "生成 3 秒悬停预览" : "自动读取事件画面"} /><MediaProgress value={image?.progress ?? 0} /></div></div>}
       <span className="absolute left-3 top-3"><Badge tone={reviewLabel.tone}>{reviewLabel.label}</Badge></span>
       <span className="absolute bottom-3 right-3 rounded-md bg-black/65 px-2 py-1 font-mono text-xs text-white">{eventDuration(item)}</span>
     </div>
@@ -473,4 +483,9 @@ function EventCard({ item, cameraName, preview, animation, onHover, onReview, on
       </div>
     </div>
   </article>;
+}
+
+function MediaProgress({ value }: { value: number }) {
+  const percent = Math.max(0, Math.min(100, Math.round(value * 100)));
+  return <div className="mt-3" role="progressbar" aria-label="媒体读取进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><div className="h-1.5 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-emerald-300 transition-[width]" style={{ width: `${Math.max(4, percent)}%` }} /></div><p className="mt-1 text-center font-mono text-[10px] text-emerald-100/70">{percent}%</p></div>;
 }

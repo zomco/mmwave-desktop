@@ -202,6 +202,7 @@ export interface EventPreview {
   bookmark_id: string;
   job_id: string;
   status: "queued" | "generating" | "ready" | "failed";
+  progress: number;
   content_url: string | null;
 }
 
@@ -266,10 +267,17 @@ export interface Clip {
   requested_window: { start_at: string; end_at: string };
   actual_window: { start_at: string; end_at: string } | null;
   status: "queued" | "generating" | "ready" | "failed";
+  progress: number;
   video_codec: string | null;
   audio_codec: string | null;
   size_bytes: number | null;
   created_at: string;
   content_url: string | null;
   origin: ClipOrigin | null;
+}
+
+export interface ClipShare {
+  clip_id: string;
+  url: string;
+  expires_at: string;
 }

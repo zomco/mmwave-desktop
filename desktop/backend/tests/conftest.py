@@ -169,6 +169,24 @@ class FakeMediaRunner:
         return output
 
 
+class FakeShareServer:
+    def __init__(self) -> None:
+        self.stopped = False
+
+    def create_share(self, *, clip_id, path, title, route_target):
+        assert path.is_file()
+        assert title == "Front door"
+        assert route_target == "192.0.2.10"
+        return {
+            "clip_id": clip_id,
+            "url": "http://192.0.2.55:54321/s/fixture-token",
+            "expires_at_ms": 1_786_528_900_000,
+        }
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
 @pytest.fixture
 def services(tmp_path: Path) -> DesktopServices:
     config = AppConfig(
@@ -183,6 +201,7 @@ def services(tmp_path: Path) -> DesktopServices:
         secret_store=InMemorySecretStore(),
         adapter_factory=lambda _: adapter,
         media_runner=FakeMediaRunner(config.clip_dir),
+        share_server=FakeShareServer(),
         device_discoverer=lambda _timeout: (
             DiscoveredDevice(
                 "192.0.2.20", 80, False, "Discovered recorder", "fixture-discovery", ("NetworkVideoTransmitter",)

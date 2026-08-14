@@ -7,9 +7,10 @@
 ```text
 Event search
 ├─ Required exact time, one visual camera and exactly one behavior type
-├─ NVR-grouped camera snapshots as a single-choice target-area selector
+├─ NVR-grouped camera snapshots refreshed once on page entry as a single-choice target-area selector
+├─ Selected camera overlays the selected event type's evidenced rule boundary
 ├─ Saved filters
-├─ Summary-only first pass with a zoomable event-span timeline and duration facets
+├─ Summary-only first pass with a single-track zoomable event-span timeline and duration facets
 ├─ Click an event span or drag a sub-window; duration facets recompute for that window
 ├─ Paged preview gallery only after a secondary timeline/all-events choice
 ├─ Hover motion and durable reviewed/excluded state
@@ -23,8 +24,9 @@ Device center
 └─ On-demand NVR/camera hardware and firmware details
 
 Candidates and exports
-├─ Browser playback and MP4 download
-└─ NVR-indexed event/clip time, camera and search provenance
+├─ Browser playback, generation/download progress and MP4 download
+├─ Compact event behavior plus camera/time title without duplicate provenance fields
+└─ Explicit 15-minute, token-scoped LAN QR share for one ready clip
 
 Settings
 └─ Local overnight start/end hours

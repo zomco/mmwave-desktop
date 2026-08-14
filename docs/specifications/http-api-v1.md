@@ -113,7 +113,7 @@ Example search:
 }
 ```
 
-The effective target area is exactly one stable camera ID; the browser groups camera images by NVR and renders them as a radio choice, so there is no recorder or free-text area filter. `channel_ids` therefore contains exactly one item. `event_types` also contains exactly one of `motion`, `video_tamper`, `line_crossing` or `region_intrusion`. Continuous recording, catch-all Smart labels and multi-type requests are rejected. Presets persist one camera ID plus one event tag. Each job reads bounded historical alarm logs and pairs matching start/stop entries for the same camera and type, up to one hour. A paired event stores its real `event_duration_ms`; an unpaired event stores `null` with `duration_source: "unknown"`. `result.truncated` reports an adapter limit. Recording search is deferred until preview/clip generation. `search-jobs/{job_id}/results?limit=12&offset=0` returns a bounded page, total count and `has_more`, and only includes events produced by that search. JPEG preview creation is asynchronous and cached per event. The animation route lazily creates a verified, bounded three-second animated WebP for hover playback. All files are written atomically under the derived-media root.
+The effective target area is exactly one stable camera ID; the browser groups camera images by NVR and renders them as a radio choice, so there is no recorder or free-text area filter. `channel_ids` therefore contains exactly one item. `event_types` also contains exactly one of `motion`, `video_tamper`, `line_crossing` or `region_intrusion`. Continuous recording, catch-all Smart labels and multi-type requests are rejected. Presets persist one camera ID plus one event tag. Each job reads bounded historical alarm logs and pairs matching start/stop entries for the same camera and type, up to one hour. A paired event stores its real `event_duration_ms`; an unpaired event stores `null` with `duration_source: "unknown"`. `result.truncated` reports an adapter limit. Recording search is deferred until preview/clip generation. `search-jobs/{job_id}/results?limit=12&offset=0` returns a bounded page, total count and `has_more`, and only includes events produced by that search. JPEG preview creation is asynchronous and cached per event. Preview and animation status responses include normalized job `progress` from `0` to `1`; it is phase progress rather than an upstream byte counter. The animation route lazily creates a verified, bounded three-second animated WebP for hover playback. All files are written atomically under the derived-media root.
 
 A Trace session persists one camera/event-type scope and accepts one bounded time iteration. Create a session with `{"channel_ids":["channel_01"],"event_types":["motion"]}`, then append a window with `{"from":"2026-08-12T18:00:00+08:00","to":"2026-08-13T06:00:00+08:00","label":"Time range"}`. Repeating that exact window is idempotent; a different second window returns `TRACE_SESSION_WINDOW_FIXED`, and the client must create a new search. The persisted job kind remains `recording_search` for schema compatibility, but its event source is the historical alarm log.
 
@@ -128,6 +128,7 @@ POST   /api/v1/clips
 GET    /api/v1/clips
 GET    /api/v1/clips/{clip_id}
 GET    /api/v1/clips/{clip_id}/content
+POST   /api/v1/clips/{clip_id}/share
 DELETE /api/v1/clips/{clip_id}
 GET    /api/v1/jobs
 GET    /api/v1/jobs/{job_id}
@@ -140,12 +141,14 @@ Create by bookmark or explicit channel/window, never by a browser-supplied RTSP 
 {
   "bookmark_id": "interval_01",
   "search_job_id": "job_search_01",
-  "window_override": { "pre_roll_ms": 5000, "post_roll_ms": 10000, "max_duration_ms": 60000 },
+  "window_override": { "pre_roll_ms": 0, "post_roll_ms": 0 },
   "audio_policy": "prefer"
 }
 ```
 
-When created from a bookmark, the public clip record includes safe `origin` fields: bookmark ID, search job ID, area label, channel label, event type/classification, event window, `time_basis: "nvr_index"`, whether adjacent-event padding was trimmed, and whether an explicitly requested candidate-duration cap was applied. For adjacent non-overlapping events from the same camera/search, only contextual pre/post padding is clipped at a whole-second midpoint that remains between event bodies; the event bodies themselves are never trimmed. Whole-second quantization matches the evidenced NVR recording-index precision. Genuine event-body overlaps remain overlaps. The response never includes an RTSP locator or credential. Explicit channel/window clips have `origin: null`.
+When created from a bookmark, the default and Event Search UI export exactly the indexed event start/end interval (`pre_roll_ms=0`, `post_roll_ms=0`) with no implicit duration cap. Non-zero contextual padding remains an explicit API/settings option. The public clip record includes safe `origin` fields: bookmark ID, search job ID, area label, channel label, event type/classification, event window, `time_basis: "nvr_index"`, whether explicitly requested adjacent-event padding was trimmed, and whether an explicit candidate-duration cap was applied. For adjacent non-overlapping events from the same camera/search, only non-zero contextual padding is clipped at a whole-second midpoint that remains between event bodies; event bodies are never trimmed. Genuine event-body overlaps remain overlaps. The response never includes an RTSP locator or credential. Explicit channel/window clips have `origin: null`. Clip records include phase `progress`; the browser additionally calculates byte progress while downloading the ready MP4.
+
+`clips/{clip_id}/share` is an explicit local-user action governed by ADR-0006. It starts or reuses a separate private-interface listener and returns a locally generated capability URL plus its expiry. A 256-bit in-memory token authorizes only `GET`/`HEAD` access to a minimal page and bounded Range delivery for that one ready clip for 15 minutes. It does not expose the loopback API, NVR address, credentials or filesystem path. The QR is generated locally; the URL is not sent to a third-party QR service.
 
 Internal event and clip time remains UTC. Before FFmpeg, each locator's broad recording bounds are replaced with the resolved requested media-segment bounds. For tested Hikvision firmware whose compact RTSP playback tokens are interpreted as device-local wall time despite their `Z` suffix, the media boundary then translates only those locator tokens using the observed device offset. Public event/clip timestamps are not shifted. An embedded camera OSD watermark uses the camera's own clock and may differ from NVR-indexed event time; TraceCue reports this mismatch instead of guessing a correction.
 
