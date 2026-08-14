@@ -9,6 +9,7 @@
 ```text
 probe(connection) -> CapabilityReport
 list_channels(connection) -> MediaChannel[]
+inspect_device_details(connection) -> DeviceDetailsReport
 search_recordings(query) -> Page<RecordingSpan>
 search_historical_events(query) -> HistoricalEventResult
 resolve_media(request) -> MediaResolution
@@ -20,7 +21,7 @@ resolve_media(request) -> MediaResolution
 
 ## 已实现基线
 
-`tracecue-hikvision` 0.1.0 提供基于标准库的 Digest 传输、显式 TLS 验证策略、有界响应读取、DTD/实体拒绝、XML 深度限制、设备/时间/通道解析、证据快照、有界录像/历史报警日志分页、事件开始/停止配对、不前进检测、普通/Smart 规则检查、按端点归一化的栅格/警戒线/多边形覆盖层、有界 RTSP 定位符处理和录像缺口解析。仓库内 fixture 均为合成数据，并明确不能作为硬件支持证据。
+`tracecue-hikvision` 0.1.0 提供基于标准库的 Digest 传输、显式 TLS 验证策略、有界响应读取、DTD/实体拒绝、XML 深度限制、设备/时间/通道解析、按需 NVR/摄像机详情解析、证据快照、有界录像/历史报警日志分页、事件开始/停止配对、不前进检测、普通/Smart 规则检查、按端点归一化的栅格/警戒线/多边形覆盖层、有界 RTSP 定位符处理和录像缺口解析。由于部分 NVR 固件只返回摄像机连接状态，摄像机型号/固件字段保持可空。仓库内 fixture 均为合成数据，并明确不能作为硬件支持证据。
 
 ```powershell
 python -m pip install -e "./integrations/hikvision[dev]"

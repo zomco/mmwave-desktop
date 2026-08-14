@@ -12,7 +12,9 @@ from tracecue_desktop.services import DesktopServices
 from tracecue_hikvision import (
     CapabilityEvidence,
     CapabilityReport,
+    CameraDeviceDetails,
     ClockObservation,
+    DeviceDetailsReport,
     DeviceIdentity,
     DiscoveredDevice,
     EventAuditReport,
@@ -21,6 +23,7 @@ from tracecue_hikvision import (
     HistoricalEventResult,
     HikvisionAdapter,
     MediaChannel,
+    NvrDeviceDetails,
     Page,
     RecordingSpan,
 )
@@ -58,6 +61,22 @@ class FakeAdapter:
 
     def list_channels(self):
         return (MediaChannel("1", "Front door", True, 1, ("101",)),)
+
+    def inspect_device_details(self):
+        return DeviceDetailsReport(
+            NOW,
+            NvrDeviceDetails(
+                "Fixture NVR", "NVR", "fixture-nvr", "fixture-firmware",
+                "must-not-leak", "00:00:00:00:00:00", "255", "20260812",
+                "fixture-encoder", "20260811",
+            ),
+            (
+                CameraDeviceDetails(
+                    "1", "Front door", True, "fixture-camera", "camera-firmware",
+                    "camera-serial", "camera-device", "HIKVISION", "192.0.2.41", 8000, 1, "main",
+                ),
+            ),
+        )
 
     def search_all_recordings(self, query):
         return self.spans

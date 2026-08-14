@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <DeviceInfo xmlns="http://www.hikvision.com/ver20/XMLSchema">
   <deviceName>Redacted NVR</deviceName>
+  <deviceID>255</deviceID>
+  <deviceType>NVR</deviceType>
   <model>DS-REDACTED</model>
   <serialNumber>REDACTED-SERIAL</serialNumber>
   <firmwareVersion>V0.0.0 fixture</firmwareVersion>
+  <firmwareReleasedDate>20260812</firmwareReleasedDate>
+  <encoderVersion>V5.0 fixture</encoderVersion>
+  <encoderReleasedDate>20260811</encoderReleasedDate>
+  <macAddress>00:00:00:00:00:00</macAddress>
 </DeviceInfo>
-

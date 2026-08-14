@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | `device_info` | Read model/firmware/time identity | Required |
 | `channel_discovery` | Enumerate enabled media channels | Required |
+| `device_details` | Read NVR identity and available per-camera connection/identity fields on demand | Implemented, endpoint/firmware-dependent |
 | `record_search` | Search recorded spans by channel/time | Required |
 | `record_classification` | Receive coarse recording-file classification | Media fallback only; not an event source |
 | `historical_event_search` | Query ordinary and Smart historical alarm logs | Implemented for evidenced ISAPI firmware |
@@ -38,6 +39,8 @@ The event audit reads known motion/tamper ordinary events and line-crossing/intr
 Hikvision input IDs, stream channel IDs and RTSP track IDs are related but not interchangeable. Store each as adapter metadata under a stable internal `nvr_channel.id`. A business space maps to that internal ID, never directly to `101`-style track IDs.
 
 Channel discovery first checks the local video-input inventory used by cameras and compatible recorders. If that endpoint is unavailable or access-controlled, NVR digital channels fall back to the read-only `/ISAPI/ContentMgmt/InputProxy/channels/status` inventory. Stream track IDs are accepted only from device evidence; they are not calculated from channel numbers.
+
+Device detail reads use `/ISAPI/System/deviceInfo` for NVR hardware/firmware identity and the input-proxy status inventory for per-camera fields. The evidenced firmware returned camera online state, address, protocol and ports but did not return camera model/firmware even though its capability resource advertised channel device information. TraceCue therefore performs this read only when the user expands details and renders missing per-camera identity as unavailable instead of inferring it.
 
 ## Authentication and transport
 

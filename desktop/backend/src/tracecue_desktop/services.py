@@ -54,6 +54,37 @@ def rfc3339(value_ms: int | None) -> str | None:
     return rendered.removesuffix("+00:00") + "Z"
 
 
+def clamp_candidate_window(
+    candidate_start_ms: int,
+    candidate_end_ms: int,
+    event_start_ms: int,
+    event_end_ms: int,
+    *,
+    previous_event_end_ms: int | None = None,
+    next_event_start_ms: int | None = None,
+) -> tuple[int, int, bool]:
+    """Trim only contextual padding at midpoints between adjacent event bodies."""
+    def device_safe_midpoint(left_ms: int, right_ms: int) -> int:
+        raw = left_ms + (right_ms - left_ms) // 2
+        floor_second = raw - raw % 1_000
+        if left_ms <= floor_second <= right_ms:
+            return floor_second
+        ceil_second = floor_second + 1_000
+        if left_ms <= ceil_second <= right_ms:
+            return ceil_second
+        return raw
+
+    start_ms = candidate_start_ms
+    end_ms = candidate_end_ms
+    if previous_event_end_ms is not None and previous_event_end_ms <= event_start_ms:
+        midpoint = device_safe_midpoint(previous_event_end_ms, event_start_ms)
+        start_ms = max(start_ms, min(event_start_ms, midpoint))
+    if next_event_start_ms is not None and next_event_start_ms >= event_end_ms:
+        midpoint = device_safe_midpoint(event_end_ms, next_event_start_ms)
+        end_ms = min(end_ms, max(event_end_ms, midpoint))
+    return start_ms, end_ms, start_ms != candidate_start_ms or end_ms != candidate_end_ms
+
+
 def jsonable(value: Any) -> Any:
     if is_dataclass(value):
         return jsonable(asdict(value))
@@ -181,6 +212,48 @@ class DesktopServices:
         if not row:
             raise AppError("NVR_NOT_FOUND", "NVR was not found.", 404)
         return self._public_nvr(row)
+
+    def nvr_details(self, nvr_id: str) -> dict[str, Any]:
+        row = self._nvr_row(nvr_id)
+        try:
+            report = self._adapter_for_row(row).inspect_device_details()
+        except HikvisionError as exc:
+            raise AppError(exc.code, "NVR device details could not be inspected.", 502) from exc
+        payload = jsonable(report)
+        payload["connection"] = {
+            "host": row["host"],
+            "http_port": int(row["http_port"]),
+            "use_https": bool(row["use_https"]),
+            "timezone": row["timezone"],
+            "clock_skew_ms": row["clock_skew_ms"],
+        }
+        stored_channels = self.database.all(
+            "SELECT id, external_channel_id, device_name, alias, online FROM nvr_channels WHERE nvr_id=?",
+            (nvr_id,),
+        )
+        returned = {item["external_channel_id"]: item for item in payload["cameras"]}
+        for channel in stored_channels:
+            details = returned.get(channel["external_channel_id"])
+            if details is None:
+                details = {
+                    "external_channel_id": channel["external_channel_id"],
+                    "name": channel["device_name"],
+                    "online": bool(channel["online"]),
+                    "model": None,
+                    "firmware": None,
+                    "serial_number": None,
+                    "device_id": None,
+                    "protocol": None,
+                    "address": None,
+                    "manage_port": None,
+                    "source_input_port": None,
+                    "stream_type": None,
+                }
+                payload["cameras"].append(details)
+            details["channel_id"] = channel["id"]
+            details["label"] = channel["alias"] or channel["device_name"]
+        payload["cameras"].sort(key=lambda item: item["external_channel_id"])
+        return payload
 
     def patch_nvr(self, nvr_id: str, values: dict[str, Any]) -> dict[str, Any]:
         current = self._nvr_row(nvr_id)
@@ -441,8 +514,8 @@ class DesktopServices:
             if channel["nvr_id"] != nvr_id:
                 raise AppError("NVR_CHANNEL_MISMATCH", "A channel does not belong to the selected NVR.", 422)
         event_types = [str(value).strip().lower() for value in values.get("event_types") or [] if str(value).strip()]
-        if not event_types:
-            raise AppError("EVENT_FILTER_REQUIRED", "Select at least one event type.", 422)
+        if len(event_types) != 1:
+            raise AppError("EVENT_FILTER_REQUIRED", "Select exactly one event type.", 422)
         if any(len(value) > 100 for value in event_types):
             raise AppError("EVENT_FILTER_INVALID", "An event type filter is too long.", 422)
         preset_id = values.get("preset_id")
@@ -482,6 +555,9 @@ class DesktopServices:
         channel_ids = list(dict.fromkeys(values["channel_ids"]))
         if len(channel_ids) != 1:
             raise AppError("NVR_CHANNEL_REQUIRED", "Select exactly one camera.", 422)
+        event_types = list(dict.fromkeys(values.get("event_types") or []))
+        if len(event_types) != 1:
+            raise AppError("EVENT_FILTER_REQUIRED", "Select exactly one event type.", 422)
         nvr_ids: list[str] = []
         for channel_id in channel_ids:
             channel = self._channel_row(channel_id)
@@ -502,7 +578,7 @@ class DesktopServices:
             (
                 preset_id, values["name"].strip(), primary_nvr_id,
                 (values.get("area_name") or "").strip(), json.dumps(channel_ids),
-                json.dumps(list(dict.fromkeys(values["event_types"]))),
+                json.dumps(event_types),
                 timestamp, timestamp, timestamp, json.dumps(channel_ids),
             ),
         )
@@ -530,8 +606,9 @@ class DesktopServices:
             for value in values.get("event_types") or []
             if str(value).strip()
         ]
-        if not event_types:
-            raise AppError("EVENT_FILTER_REQUIRED", "Select at least one event type.", 422)
+        event_types = list(dict.fromkeys(event_types))
+        if len(event_types) != 1:
+            raise AppError("EVENT_FILTER_REQUIRED", "Select exactly one event type.", 422)
         if any(len(value) > 100 for value in event_types):
             raise AppError("EVENT_FILTER_INVALID", "An event type filter is too long.", 422)
         preset_id = values.get("preset_id")
@@ -550,7 +627,7 @@ class DesktopServices:
             (
                 session_id,
                 json.dumps(channel_ids),
-                json.dumps(list(dict.fromkeys(event_types))),
+                json.dumps(event_types),
                 preset_id,
                 timestamp,
                 timestamp,
@@ -646,7 +723,6 @@ class DesktopServices:
         from_at: str | None = None,
         to_at: str | None = None,
         duration_class: str | None = None,
-        event_type: str | None = None,
         summary_only: bool = False,
     ) -> dict[str, Any]:
         self._trace_session_row(session_id)
@@ -658,16 +734,18 @@ class DesktopServices:
         duration_classes = {"unknown", "under_5s", "5_to_30s", "over_30s"}
         if duration_class is not None and duration_class not in duration_classes:
             raise AppError("TRACE_DURATION_FILTER_INVALID", "Event-duration filter is invalid.", 422)
-        event_types = {"motion", "video_tamper", "line_crossing", "region_intrusion"}
-        if event_type is not None and event_type not in event_types:
-            raise AppError("TRACE_EVENT_FILTER_INVALID", "Event-type filter is invalid.", 422)
-        filters: list[str] = []
-        filter_parameters: list[Any] = []
+
+        review_filters: list[str] = []
+        review_parameters: list[Any] = []
         if review_state == "active":
-            filters.append("COALESCE(r.state, 'unreviewed') != 'excluded'")
+            review_filters.append("COALESCE(r.state, 'unreviewed') != 'excluded'")
         elif review_state != "all":
-            filters.append("COALESCE(r.state, 'unreviewed') = ?")
-            filter_parameters.append(review_state)
+            review_filters.append("COALESCE(r.state, 'unreviewed') = ?")
+            review_parameters.append(review_state)
+
+        time_filters: list[str] = []
+        time_parameters: list[Any] = []
+        selected_window: dict[str, str] | None = None
         if (from_at is None) != (to_at is None):
             raise AppError("TRACE_TIME_FILTER_INVALID", "Both time-filter bounds are required.", 422)
         if from_at is not None and to_at is not None:
@@ -675,23 +753,30 @@ class DesktopServices:
             filter_end = self._external_time(to_at, "to")
             if filter_end <= filter_start:
                 raise AppError("TIMELINE_RANGE_INVALID", "Result filter end must be after start.", 422)
-            filters.append("i.resolved_start_ms >= ? AND i.resolved_start_ms < ?")
-            filter_parameters.extend((filter_start, filter_end))
+            # An event belongs to a selected window when their intervals overlap.
+            # Start-only filtering drops events that begin before a dragged range.
+            time_filters.append("i.resolved_start_ms < ? AND i.resolved_end_ms > ?")
+            time_parameters.extend((filter_end, filter_start))
+            selected_window = {"start_at": rfc3339(filter_start), "end_at": rfc3339(filter_end)}
+
         duration_expression = (
             "CAST(json_extract(i.attributes_json, '$.hikvision.event_duration_ms') AS INTEGER)"
         )
+        duration_filters: list[str] = []
         if duration_class == "unknown":
-            filters.append(f"{duration_expression} IS NULL")
+            duration_filters.append(f"{duration_expression} IS NULL")
         elif duration_class == "under_5s":
-            filters.append(f"{duration_expression} >= 0 AND {duration_expression} < 5000")
+            duration_filters.append(f"{duration_expression} >= 0 AND {duration_expression} < 5000")
         elif duration_class == "5_to_30s":
-            filters.append(f"{duration_expression} >= 5000 AND {duration_expression} <= 30000")
+            duration_filters.append(f"{duration_expression} >= 5000 AND {duration_expression} <= 30000")
         elif duration_class == "over_30s":
-            filters.append(f"{duration_expression} > 30000")
-        if event_type is not None:
-            filters.append("i.event_type = ?")
-            filter_parameters.append(f"nvr.{event_type}")
-        filter_clause = " AND " + " AND ".join(filters) if filters else ""
+            duration_filters.append(f"{duration_expression} > 30000")
+
+        result_filters = [*review_filters, *time_filters, *duration_filters]
+        result_parameters = [*review_parameters, *time_parameters]
+        result_filter_clause = " AND " + " AND ".join(result_filters) if result_filters else ""
+        time_filter_clause = " AND " + " AND ".join(time_filters) if time_filters else ""
+
         rows: list[dict[str, Any]] = []
         if not summary_only:
             rows = self.database.all(
@@ -721,12 +806,13 @@ class DesktopServices:
                 LEFT JOIN nvr_channels nc ON nc.id=i.nvr_channel_id
                 LEFT JOIN trace_event_reviews r
                   ON r.session_id=? AND r.interval_id=i.id
-                WHERE 1=1 {filter_clause}
+                WHERE 1=1 {result_filter_clause}
                 ORDER BY i.resolved_start_ms DESC, i.id DESC
                 LIMIT ? OFFSET ?
                 """,
-                (session_id, session_id, *filter_parameters, limit, offset),
+                (session_id, session_id, *result_parameters, limit, offset),
             )
+
         counts = {state: 0 for state in ("unreviewed", "reviewed", "excluded", "candidate")}
         for row in self.database.all(
             """
@@ -746,31 +832,36 @@ class DesktopServices:
             (session_id, session_id),
         ):
             counts[row["state"]] = int(row["count"])
-        density = [
-            {
-                "start_at": rfc3339(int(row["bucket_ms"])),
-                "end_at": rfc3339(int(row["bucket_ms"]) + 3_600_000),
-                "count": int(row["count"]),
-            }
-            for row in self.database.all(
-                """
-                WITH hits AS (
-                    SELECT DISTINCT sr.interval_id
-                    FROM trace_iterations ti
-                    JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
-                    JOIN search_results sr ON sr.search_job_id=tij.job_id
-                    WHERE ti.session_id=?
-                )
-                SELECT CAST(i.resolved_start_ms / 3600000 AS INTEGER) * 3600000 AS bucket_ms,
-                       COUNT(*) AS count
-                FROM hits JOIN intervals i ON i.id=hits.interval_id
-                GROUP BY bucket_ms ORDER BY bucket_ms
-                """,
-                (session_id,),
+
+        timeline_rows = self.database.all(
+            """
+            WITH hits AS (
+                SELECT DISTINCT sr.interval_id
+                FROM trace_iterations ti
+                JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+                JOIN search_results sr ON sr.search_job_id=tij.job_id
+                WHERE ti.session_id=?
             )
+            SELECT i.id, i.resolved_start_ms, i.resolved_end_ms,
+                   CAST(json_extract(i.attributes_json, '$.hikvision.event_duration_ms') AS INTEGER) AS duration_ms
+            FROM hits JOIN intervals i ON i.id=hits.interval_id
+            ORDER BY i.resolved_start_ms, i.id
+            LIMIT 2001
+            """,
+            (session_id,),
+        )
+        timeline_truncated = len(timeline_rows) > 2_000
+        timeline = [
+            {
+                "id": row["id"],
+                "start_at": rfc3339(int(row["resolved_start_ms"])),
+                "end_at": rfc3339(int(row["resolved_end_ms"])),
+                "duration_ms": int(row["duration_ms"]) if row["duration_ms"] is not None else None,
+            }
+            for row in timeline_rows[:2_000]
         ]
+
         duration_buckets = {key: 0 for key in ("unknown", "under_5s", "5_to_30s", "over_30s")}
-        event_type_counts = {key: 0 for key in sorted(event_types)}
         for row in self.database.all(
             f"""
             WITH hits AS (
@@ -780,14 +871,12 @@ class DesktopServices:
                 JOIN search_results sr ON sr.search_job_id=tij.job_id
                 WHERE ti.session_id=?
             )
-            SELECT i.event_type, {duration_expression} AS duration_ms
+            SELECT {duration_expression} AS duration_ms
             FROM hits JOIN intervals i ON i.id=hits.interval_id
+            WHERE 1=1 {time_filter_clause}
             """,
-            (session_id,),
+            (session_id, *time_parameters),
         ):
-            canonical_type = str(row["event_type"]).removeprefix("nvr.")
-            if canonical_type in event_type_counts:
-                event_type_counts[canonical_type] += 1
             duration_ms = row["duration_ms"]
             if duration_ms is None:
                 duration_buckets["unknown"] += 1
@@ -816,9 +905,9 @@ class DesktopServices:
             FROM hits JOIN intervals i ON i.id=hits.interval_id
             LEFT JOIN trace_event_reviews r
               ON r.session_id=? AND r.interval_id=i.id
-            WHERE 1=1 {filter_clause}
+            WHERE 1=1 {result_filter_clause}
             """,
-            (session_id, session_id, *filter_parameters),
+            (session_id, session_id, *result_parameters),
         )
         filtered_total = int(filtered["total"] if filtered else 0)
         return {
@@ -826,9 +915,10 @@ class DesktopServices:
             "items": items,
             "total": filtered_total,
             "counts": counts,
-            "density": density,
+            "timeline": timeline,
+            "timeline_truncated": timeline_truncated,
+            "selected_window": selected_window,
             "duration_buckets": duration_buckets,
-            "event_type_counts": event_type_counts,
             "limit": limit,
             "offset": offset,
             "has_more": not summary_only and offset + len(items) < filtered_total,
@@ -1085,12 +1175,6 @@ class DesktopServices:
             override = values.get("window_override") or {}
             pre = int(override.get("pre_roll_ms", settings["pre_roll_ms"]))
             post = int(override.get("post_roll_ms", settings["post_roll_ms"]))
-            start_ms = interval["media_start_ms"] if interval["media_start_ms"] is not None else interval["resolved_start_ms"] - pre
-            end_ms = interval["media_end_ms"] if interval["media_end_ms"] is not None else interval["resolved_end_ms"] + post
-            uncapped_end_ms = end_ms
-            max_duration_ms = override.get("max_duration_ms")
-            if max_duration_ms is not None and end_ms - start_ms > int(max_duration_ms):
-                end_ms = start_ms + int(max_duration_ms)
             search_job_id = values.get("search_job_id")
             if search_job_id:
                 link = self.database.one(
@@ -1109,6 +1193,48 @@ class DesktopServices:
                     (bookmark_id,),
                 )
                 search_job_id = latest["search_job_id"] if latest else None
+
+            start_ms = interval["media_start_ms"] if interval["media_start_ms"] is not None else interval["resolved_start_ms"] - pre
+            end_ms = interval["media_end_ms"] if interval["media_end_ms"] is not None else interval["resolved_end_ms"] + post
+            previous_event_end_ms: int | None = None
+            next_event_start_ms: int | None = None
+            if search_job_id and channel_id:
+                previous = self.database.one(
+                    """
+                    SELECT neighbor.resolved_end_ms
+                    FROM search_results sr
+                    JOIN intervals neighbor ON neighbor.id=sr.interval_id
+                    WHERE sr.search_job_id=? AND neighbor.id!=? AND neighbor.nvr_channel_id=?
+                      AND neighbor.resolved_end_ms<=?
+                    ORDER BY neighbor.resolved_end_ms DESC, neighbor.id DESC LIMIT 1
+                    """,
+                    (search_job_id, bookmark_id, channel_id, interval["resolved_start_ms"]),
+                )
+                following = self.database.one(
+                    """
+                    SELECT neighbor.resolved_start_ms
+                    FROM search_results sr
+                    JOIN intervals neighbor ON neighbor.id=sr.interval_id
+                    WHERE sr.search_job_id=? AND neighbor.id!=? AND neighbor.nvr_channel_id=?
+                      AND neighbor.resolved_start_ms>=?
+                    ORDER BY neighbor.resolved_start_ms, neighbor.id LIMIT 1
+                    """,
+                    (search_job_id, bookmark_id, channel_id, interval["resolved_end_ms"]),
+                )
+                previous_event_end_ms = int(previous["resolved_end_ms"]) if previous else None
+                next_event_start_ms = int(following["resolved_start_ms"]) if following else None
+            start_ms, end_ms, padding_trimmed = clamp_candidate_window(
+                int(start_ms),
+                int(end_ms),
+                int(interval["resolved_start_ms"]),
+                int(interval["resolved_end_ms"]),
+                previous_event_end_ms=previous_event_end_ms,
+                next_event_start_ms=next_event_start_ms,
+            )
+            uncapped_end_ms = end_ms
+            max_duration_ms = override.get("max_duration_ms")
+            if max_duration_ms is not None and end_ms - start_ms > int(max_duration_ms):
+                end_ms = start_ms + int(max_duration_ms)
             bookmark = self.get_bookmark(bookmark_id)
             attributes = bookmark.get("attributes", {}).get("hikvision", {})
             origin = {
@@ -1119,6 +1245,7 @@ class DesktopServices:
                 "event_type": bookmark["event_type"],
                 "classification": attributes.get("classification"),
                 "event_window": {"start_at": bookmark["start_at"], "end_at": bookmark["end_at"]},
+                "padding_trimmed_for_neighbor_events": padding_trimmed,
                 "candidate_window_capped": end_ms < uncapped_end_ms,
                 "time_basis": "nvr_index",
             }

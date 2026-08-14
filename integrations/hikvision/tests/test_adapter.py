@@ -126,6 +126,20 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(("101", "102"), channels[0].stream_track_ids)
         self.assertFalse(channels[1].enabled)
 
+    def test_device_details_are_read_on_demand_without_credentials(self) -> None:
+        adapter = self.adapter()
+        adapter.transport.responses[
+            ("GET", "/ISAPI/ContentMgmt/InputProxy/channels/status")
+        ] = fixture("input_proxy_channel_status.xml")
+
+        report = adapter.inspect_device_details()
+
+        self.assertEqual("NVR", report.nvr.device_type)
+        self.assertEqual("V5.0 fixture", report.nvr.encoder_version)
+        self.assertEqual("DS-CAMERA-FIXTURE", report.cameras[0].model)
+        self.assertEqual("192.0.2.41", report.cameras[0].address)
+        self.assertNotIn("CAMERA-SECRET-SERIAL", repr(report))
+
     def test_event_audit_summarizes_rule_without_exposing_raw_configuration(self) -> None:
         adapter = self.adapter()
         adapter.transport.responses[

@@ -7,6 +7,14 @@
       <srcInputPort>1</srcInputPort>
     </sourceInputPortDescriptor>
     <online>true</online>
+    <deviceID>camera-fixture-1</deviceID>
+    <ipAddress>192.0.2.41</ipAddress>
+    <managePortNo>8000</managePortNo>
+    <proxyProtocol>HIKVISION</proxyProtocol>
+    <streamType>main</streamType>
+    <model>DS-CAMERA-FIXTURE</model>
+    <firmwareVersion>V1.2.3 fixture</firmwareVersion>
+    <serialNumber>CAMERA-SECRET-SERIAL</serialNumber>
     <streamingProxyChannelIdList>
       <streamingProxyChannelId>101</streamingProxyChannelId>
       <streamingProxyChannelId>102</streamingProxyChannelId>

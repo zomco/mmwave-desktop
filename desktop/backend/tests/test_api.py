@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tracecue_desktop.app import create_app
+from tracecue_desktop.services import clamp_candidate_window
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -39,6 +40,13 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     channels = api.get(f"/api/v1/nvrs/{nvr['id']}/channels").json()
     assert len(channels) == 1
     assert channels[0]["id"] != "101"
+
+    details = api.get(f"/api/v1/nvrs/{nvr['id']}/details")
+    assert details.status_code == 200
+    assert details.json()["nvr"]["encoder_version"] == "fixture-encoder"
+    assert details.json()["cameras"][0]["model"] == "fixture-camera"
+    assert details.json()["cameras"][0]["channel_id"] == channels[0]["id"]
+    assert "password" not in json.dumps(details.json()).lower()
 
     snapshot = api.post(f"/api/v1/channels/{channels[0]['id']}/snapshot")
     assert snapshot.status_code == 202
@@ -101,6 +109,7 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert ready["origin"]["search_job_id"] == search.json()["id"]
     assert ready["origin"]["classification"] == "log.hikvision.com/Alarm/motionStart/1"
     assert ready["origin"]["candidate_window_capped"] is True
+    assert ready["origin"]["padding_trimmed_for_neighbor_events"] is False
     assert ready["origin"]["time_basis"] == "nvr_index"
     assert ready["requested_window"] == {
         "start_at": "2026-08-12T08:00:00.000Z",
@@ -172,6 +181,10 @@ def test_continuous_and_catch_all_smart_are_not_event_filters(services, nvr) -> 
         "/api/v1/trace-sessions",
         json={"channel_ids": [channel["id"], channel["id"]], "event_types": ["motion"]},
     ).status_code == 422
+    assert api.post(
+        "/api/v1/trace-sessions",
+        json={"channel_ids": [channel["id"]], "event_types": ["motion", "line_crossing"]},
+    ).status_code == 422
 
 
 def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews(
@@ -219,8 +232,10 @@ def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews
     assert summary["summary_only"] is True
     assert summary["duration_buckets"]["5_to_30s"] == 1
     assert summary["duration_buckets"]["unknown"] == 0
-    assert summary["event_type_counts"]["motion"] == 1
-    assert summary["density"][0]["end_at"] == "2026-08-12T09:00:00.000Z"
+    assert summary["timeline"][0]["start_at"] == "2026-08-12T08:00:00.000Z"
+    assert summary["timeline"][0]["end_at"] == "2026-08-12T08:00:09.000Z"
+    assert summary["timeline"][0]["duration_ms"] == 9000
+    assert summary["timeline_truncated"] is False
 
     results = api.get(
         f"/api/v1/trace-sessions/{session_id}/results?duration_class=5_to_30s"
@@ -228,7 +243,7 @@ def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews
     assert results["total"] == 1
     assert results["counts"]["unreviewed"] == 1
     assert results["items"][0]["review_state"] == "unreviewed"
-    assert results["density"]
+    assert results["timeline"]
     assert results["items"][0]["attributes"]["hikvision"]["event_duration_ms"] == 9000
     assert api.get(
         f"/api/v1/trace-sessions/{session_id}/results?duration_class=unknown"
@@ -237,10 +252,15 @@ def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews
 
     focused = api.get(
         f"/api/v1/trace-sessions/{session_id}/results",
-        params={"from": results["density"][0]["start_at"], "to": "2026-08-12T09:00:00Z"},
+        params={"from": "2026-08-12T08:00:05Z", "to": "2026-08-12T08:00:08Z"},
     )
     assert focused.status_code == 200
     assert focused.json()["total"] == 1
+    assert focused.json()["selected_window"] == {
+        "start_at": "2026-08-12T08:00:05.000Z",
+        "end_at": "2026-08-12T08:00:08.000Z",
+    }
+    assert focused.json()["duration_buckets"]["5_to_30s"] == 1
     assert api.get(
         f"/api/v1/trace-sessions/{session_id}/results",
         params={"from": "2026-08-12T09:00:00Z", "to": "2026-08-12T10:00:00Z"},
@@ -265,6 +285,22 @@ def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews
 
     assert api.delete(f"/api/v1/trace-sessions/{session_id}").status_code == 204
     assert api.get(f"/api/v1/trace-sessions/{session_id}").status_code == 404
+
+
+def test_candidate_padding_stops_at_adjacent_event_midpoints_without_trimming_event_bodies() -> None:
+    assert clamp_candidate_window(
+        33_000, 57_000, 38_000, 47_000, next_event_start_ms=57_000
+    ) == (33_000, 52_000, True)
+    assert clamp_candidate_window(
+        52_000, 76_000, 57_000, 66_000, next_event_start_ms=83_000
+    ) == (52_000, 74_000, True)
+    assert clamp_candidate_window(
+        52_000, 76_000, 57_000, 66_000, previous_event_end_ms=47_000
+    ) == (52_000, 76_000, False)
+    # A genuinely overlapping event body is not a safe padding boundary.
+    assert clamp_candidate_window(
+        33_000, 57_000, 38_000, 47_000, next_event_start_ms=45_000
+    ) == (33_000, 57_000, False)
 
 
 def test_delete_nvr_removes_local_credentials_and_indexed_sources(services, nvr) -> None:

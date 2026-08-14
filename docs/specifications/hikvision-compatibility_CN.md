@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | `device_info` | 读取型号/固件/时间身份 | 必需 |
 | `channel_discovery` | 枚举已启用媒体通道 | 必需 |
+| `device_details` | 按需读取 NVR 身份及设备实际提供的摄像机连接/身份字段 | 已实现，取决于端点/固件 |
 | `record_search` | 按通道/时间检索录像 Span | 必需 |
 | `record_classification` | 获得粗粒度录像文件分类 | 仅作媒体回退，不作为事件来源 |
 | `historical_event_search` | 查询普通/Smart 历史报警日志 | 已在有实证的 ISAPI 固件实现 |
@@ -38,6 +39,8 @@ TraceCue 不再分发或逆向海康私有 SADP 实现。它先发送标准 ONVI
 海康输入 ID、码流通道 ID 和 RTSP track ID 有关联但不可互换。它们作为适配器元数据保存在稳定内部 `nvr_channel.id` 下。业务空间映射内部 ID，不直接映射 `101` 一类 track ID。
 
 通道发现会先检查摄像机及兼容录像机使用的本机视频输入清单；该端点不可用或受权限限制时，NVR 数字通道回退到只读 `/ISAPI/ContentMgmt/InputProxy/channels/status` 清单。流 track ID 只接受设备返回的证据，不根据通道号推算。
+
+设备详情使用 `/ISAPI/System/deviceInfo` 读取 NVR 软硬件身份，并使用输入代理状态清单读取摄像机字段。已实测固件会返回摄像机在线状态、地址、协议和端口，但即使能力资源宣称支持通道设备信息，也没有返回摄像机型号/固件。TraceCue 因此只在用户展开详情时执行读取，并把缺失的摄像机身份明确显示为不可用，不做推断。
 
 ## 认证与传输
 

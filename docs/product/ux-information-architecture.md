@@ -6,11 +6,12 @@
 
 ```text
 Event search
-├─ Required exact time, one visual camera and one or more behavior types
+├─ Required exact time, one visual camera and exactly one behavior type
 ├─ NVR-grouped camera snapshots as a single-choice target-area selector
 ├─ Saved filters
-├─ Summary-only first pass with hourly density, duration and event-type facets
-├─ Paged preview gallery only after a secondary facet is chosen
+├─ Summary-only first pass with a zoomable event-span timeline and duration facets
+├─ Click an event span or drag a sub-window; duration facets recompute for that window
+├─ Paged preview gallery only after a secondary timeline/all-events choice
 ├─ Hover motion and durable reviewed/excluded state
 └─ Generate candidate clip
 
@@ -18,7 +19,8 @@ Device center
 ├─ Automatic LAN discovery
 ├─ Select device and enter credentials
 ├─ Camera cards combining snapshots, aliases and event notification state
-└─ Read-only rule selection with grid/polygon/line overlays
+├─ Read-only rule selection with grid/polygon/line overlays
+└─ On-demand NVR/camera hardware and firmware details
 
 Candidates and exports
 ├─ Browser playback and MP4 download

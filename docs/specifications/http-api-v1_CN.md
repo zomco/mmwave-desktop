@@ -28,6 +28,7 @@ POST   /api/v1/nvrs/discover
 POST   /api/v1/nvrs
 GET    /api/v1/nvrs
 GET    /api/v1/nvrs/{nvr_id}
+GET    /api/v1/nvrs/{nvr_id}/details
 PATCH  /api/v1/nvrs/{nvr_id}
 DELETE /api/v1/nvrs/{nvr_id}
 POST   /api/v1/nvrs/{nvr_id}/sync-channels
@@ -41,7 +42,7 @@ POST   /api/v1/channels/{channel_id}/snapshot
 GET    /api/v1/channels/{channel_id}/snapshot/content
 ```
 
-`nvrs/discover` 接受 0.5 到 5.0 秒的有界 `timeout_seconds`。它优先使用 ONVIF WS-Discovery，回退方案只在最多三个本机直连私有 `/24` 网段上进行未认证的 80 端口探测。回退结果只是 ISAPI 候选，必须由用户提供凭据通过 `nvrs/probe` 后才能添加。事件审计 schema `4` 按摄像机外部通道 ID 只读移动/遮挡普通事件与越界/区域入侵 Smart 事件；在有实测证据时返回有界栅格/多边形/越界线覆盖层，禁止返回原始 XML/凭据，也绝不修改 NVR。Schema 4 把有实证的 LineDetection 与 FieldDetection 底边原点纵坐标归一化为浏览器左上原点坐标。旧缓存审计在首次访问时进行一次只读刷新。通道截图异步生成，优先使用设备证据中的低码率 track；实时查看权限被拒绝时，回退到有界的最近录像检索。截图 30 秒过期并只从本地派生媒体缓存交付；回退画面只用于识别摄像机，不宣称是实时视频。
+`nvrs/discover` 接受 0.5 到 5.0 秒的有界 `timeout_seconds`。它优先使用 ONVIF WS-Discovery，回退方案只在最多三个本机直连私有 `/24` 网段上进行未认证的 80 端口探测。回退结果只是 ISAPI 候选，必须由用户提供凭据通过 `nvrs/probe` 后才能添加。`nvrs/{nvr_id}/details` 在用户展开详情时按需执行只读身份读取，返回 NVR 软硬件字段和设备实际提供的摄像机连接/身份字段；NVR 不支持的摄像机型号或固件明确返回 `null`，绝不返回凭据或原始 XML。事件审计 schema `4` 按摄像机外部通道 ID 只读移动/遮挡普通事件与越界/区域入侵 Smart 事件；在有实测证据时返回有界栅格/多边形/越界线覆盖层，禁止返回原始 XML/凭据，也绝不修改 NVR。Schema 4 把有实证的 LineDetection 与 FieldDetection 底边原点纵坐标归一化为浏览器左上原点坐标。旧缓存审计在首次访问时进行一次只读刷新。通道截图异步生成，优先使用设备证据中的低码率 track；实时查看权限被拒绝时，回退到有界的最近录像检索。截图 30 秒过期并只从本地派生媒体缓存交付；回退画面只用于识别摄像机，不宣称是实时视频。
 
 Probe 只读并返回结构化证据：
 
@@ -107,16 +108,16 @@ GET  /api/v1/bookmarks/{bookmark_id}/animation/content
   "from": "2026-08-12T00:00:00+08:00",
   "to": "2026-08-13T00:00:00+08:00",
   "source_modes": ["historical_event_log"],
-  "event_types": ["motion", "line_crossing"],
+  "event_types": ["line_crossing"],
   "preset_id": "preset_01"
 }
 ```
 
-实际目标区域恰好是一个稳定摄像机 ID；浏览器按 NVR 分组并用单选方式展示摄像机画面，因此不再提供录像机或自由文本区域筛选。`channel_ids` 必须恰好有一项。`event_types` 只接受 `motion`、`video_tamper`、`line_crossing`、`region_intrusion`，且至少选择一种；连续录像与 Smart 兜底标签会被拒绝。Preset 保存一个摄像机 ID 与必填事件标签。作业读取有界历史报警日志，并在同摄像机、同类型、最长一小时范围内配对开始/停止条目。有配对时保存真实 `event_duration_ms`；无法配对时保存 `null` 及 `duration_source: "unknown"`。`result.truncated` 表示适配器达到上限。只有生成预览/片段时才执行录像检索。`search-jobs/{job_id}/results?limit=12&offset=0` 返回有界分页、总数和 `has_more`，且只包含本次检索产生的事件。JPEG 预览异步生成并按事件缓存；动图路由按需生成经过校验的有界 3 秒 WebP 悬停预览。全部文件均在派生媒体根目录原子写入。
+实际目标区域恰好是一个稳定摄像机 ID；浏览器按 NVR 分组并用单选方式展示摄像机画面，因此不再提供录像机或自由文本区域筛选。`channel_ids` 必须恰好有一项。`event_types` 也必须恰好包含 `motion`、`video_tamper`、`line_crossing` 或 `region_intrusion` 中的一项；连续录像、Smart 兜底标签和多事件类型请求都会被拒绝。Preset 保存一个摄像机 ID 与一个事件标签。作业读取有界历史报警日志，并在同摄像机、同类型、最长一小时范围内配对开始/停止条目。有配对时保存真实 `event_duration_ms`；无法配对时保存 `null` 及 `duration_source: "unknown"`。`result.truncated` 表示适配器达到上限。只有生成预览/片段时才执行录像检索。`search-jobs/{job_id}/results?limit=12&offset=0` 返回有界分页、总数和 `has_more`，且只包含本次检索产生的事件。JPEG 预览异步生成并按事件缓存；动图路由按需生成经过校验的有界 3 秒 WebP 悬停预览。全部文件均在派生媒体根目录原子写入。
 
 Trace 会话持久保存一个摄像机/事件类型范围，并只接受一个有界时间迭代。先用 `{"channel_ids":["channel_01"],"event_types":["motion"]}` 创建会话，再追加 `{"from":"2026-08-12T18:00:00+08:00","to":"2026-08-13T06:00:00+08:00","label":"时间范围"}`。重复相同时间窗保持幂等；第二个不同时间窗返回 `TRACE_SESSION_WINDOW_FIXED`，客户端必须新建检索。为保持 schema 兼容，持久化作业 kind 仍是 `recording_search`，但事件来源已经是历史报警日志。
 
-`trace-sessions/{session_id}/results` 接受有界 `limit`/`offset`、`review_state=active|all|unreviewed|reviewed|excluded|candidate`、可选成对 RFC 3339 `from`/`to`、`duration_class=unknown|under_5s|5_to_30s|over_30s`、可选规范事件类型及 `summary_only`。响应始终包含全局审阅计数、带明确 `start_at`/`end_at` 的 UTC 小时密度桶、`duration_buckets` 和 `event_type_counts`。`summary_only=true` 时 `items` 为空且不会触发预览工作；普通响应返回过滤分页及生成候选片段所需的作业身份。`active` 只排除明确标为 `excluded` 的事件。审阅 PATCH 按会话持久保存审阅状态。会话记录只含稳定 ID 和事件标签，绝不包含凭据、Authorization header 或回放 locator。
+`trace-sessions/{session_id}/results` 接受有界 `limit`/`offset`、`review_state=active|all|unreviewed|reviewed|excluded|candidate`、可选成对 RFC 3339 `from`/`to`、`duration_class=unknown|under_5s|5_to_30s|over_30s` 及 `summary_only`。响应始终包含全局审阅计数、最多 2000 个逐事件 `timeline` 区间（`id`、`start_at`、`end_at`、可空 `duration_ms`）、`timeline_truncated`、当前 `selected_window` 和 `duration_buckets`。时间筛选使用区间重叠语义；时长分组先按所选子时间窗重新计算，再应用时长类别。`summary_only=true` 时 `items` 为空且不会触发预览工作；普通响应返回过滤分页及生成候选片段所需的作业身份。`active` 只排除明确标为 `excluded` 的事件。审阅 PATCH 按会话持久保存审阅状态。会话记录只含稳定 ID 和事件标签，绝不包含凭据、Authorization header 或回放 locator。
 
 大范围检索使用后台作业。书签列表使用服务端不透明 cursor，禁止透传海康分页位置或 token。
 
@@ -144,7 +145,7 @@ POST   /api/v1/jobs/{job_id}/cancel
 }
 ```
 
-按书签创建时，公开 Clip 记录包含安全的 `origin` 字段：书签 ID、检索作业 ID、区域标签、通道标签、事件类型/原始分类、事件时间窗、`time_basis: "nvr_index"`，以及是否应用了显式候选时长上限；绝不包含 RTSP locator 或凭据。显式通道/时间窗出片的 `origin` 为 `null`。
+按书签创建时，公开 Clip 记录包含安全的 `origin` 字段：书签 ID、检索作业 ID、区域标签、通道标签、事件类型/原始分类、事件时间窗、`time_basis: "nvr_index"`、是否因相邻事件裁剪上下文，以及是否应用了显式候选时长上限。同一摄像机/检索中的相邻非重叠事件只在仍位于事件间隙内的整秒中点裁剪前后上下文；整秒量化与已实测 NVR 录像索引精度一致。事件本体绝不会被裁掉，真实事件本体重叠仍保留重叠。响应绝不包含 RTSP locator 或凭据。显式通道/时间窗出片的 `origin` 为 `null`。
 
 内部事件与 Clip 时间继续使用 UTC。进入 FFmpeg 前，先把每个 locator 的宽录像范围替换为实际解析出的请求媒体片段边界。对于经实测会把紧凑 RTSP 回放参数当作设备本地墙上时间解释（尽管带 `Z` 后缀）的海康固件，媒体边界随后只使用实测设备偏移转换这些参数；公开事件/Clip 时间戳不做平移。画面内摄像机 OSD 水印使用摄像机自身时钟，可能与 NVR 索引事件时间不同；TraceCue 会说明差异，而不是猜测校正。
 

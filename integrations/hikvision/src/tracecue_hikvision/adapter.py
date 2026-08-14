@@ -13,7 +13,9 @@ from .errors import AuthenticationError, PaginationError, UnsafePayloadError, Up
 from .models import (
     CapabilityEvidence,
     CapabilityReport,
+    CameraDeviceDetails,
     ClockObservation,
+    DeviceDetailsReport,
     DeviceIdentity,
     EventAuditReport,
     EventRuleStatus,
@@ -27,6 +29,7 @@ from .models import (
     RecordingSpan,
     ResolvedMediaSegment,
     RuleOverlay,
+    NvrDeviceDetails,
 )
 from .transport import HttpResponse, Transport
 from .xmlutil import children, local_name, parse_xml, text
@@ -144,6 +147,37 @@ class HikvisionAdapter:
     def list_channels(self) -> tuple[MediaChannel, ...]:
         channels, _, _ = self._discover_channels()
         return channels
+
+    def inspect_device_details(self) -> DeviceDetailsReport:
+        """Read device identity details on demand without persisting raw responses."""
+        observed_at = self.now()
+        response = self.transport.request("GET", DEVICE_INFO)
+        root = parse_xml(response.body)
+        nvr = NvrDeviceDetails(
+            device_name=text(root, "deviceName"),
+            device_type=text(root, "deviceType"),
+            model=text(root, "model"),
+            firmware=text(root, "firmwareVersion"),
+            serial_number=text(root, "serialNumber"),
+            mac_address=text(root, "macAddress"),
+            device_id=text(root, "deviceID"),
+            firmware_released_date=text(root, "firmwareReleasedDate"),
+            encoder_version=text(root, "encoderVersion"),
+            encoder_released_date=text(root, "encoderReleasedDate"),
+        )
+        cameras: tuple[CameraDeviceDetails, ...] = ()
+        warnings: list[dict[str, str]] = []
+        try:
+            channel_response = self.transport.request("GET", INPUT_PROXY_CHANNEL_STATUS)
+            cameras = self._parse_camera_device_details(channel_response)
+        except (AuthenticationError, UpstreamError, UnsafePayloadError):
+            warnings.append(
+                {
+                    "code": "CAMERA_DETAILS_UNAVAILABLE",
+                    "message": "The NVR did not return per-camera device details.",
+                }
+            )
+        return DeviceDetailsReport(observed_at, nvr, cameras, tuple(warnings))
 
     def inspect_event_settings(
         self, channels: tuple[MediaChannel, ...]
@@ -568,6 +602,35 @@ class HikvisionAdapter:
             )
         return tuple(result)
 
+    def _parse_camera_device_details(
+        self, response: HttpResponse
+    ) -> tuple[CameraDeviceDetails, ...]:
+        root = parse_xml(response.body)
+        result: list[CameraDeviceDetails] = []
+        for item in children(root, "InputProxyChannelStatus"):
+            external_id = text(item, "id")
+            if not external_id:
+                continue
+            manage_port = _parse_optional_int(text(item, "managePortNo"))
+            source_input_port = _parse_optional_int(text(item, "srcInputPort"))
+            result.append(
+                CameraDeviceDetails(
+                    external_channel_id=external_id,
+                    name=text(item, "name"),
+                    online=_parse_bool(text(item, "online")),
+                    model=text(item, "model"),
+                    firmware=text(item, "firmwareVersion"),
+                    serial_number=text(item, "serialNumber"),
+                    device_id=text(item, "deviceID"),
+                    protocol=text(item, "proxyProtocol"),
+                    address=text(item, "ipAddress"),
+                    manage_port=manage_port,
+                    source_input_port=source_input_port,
+                    stream_type=text(item, "streamType"),
+                )
+            )
+        return tuple(result)
+
     def _parse_recordings(self, response: HttpResponse, query: RecordingQuery) -> Page:
         root = parse_xml(response.body)
         status = " ".join((text(root, "responseStatusStrg") or "").lower().split())
@@ -656,6 +719,10 @@ def _parse_bool(value: str | None) -> bool | None:
     if normalized in {"false", "0", "no", "off"}:
         return False
     return None
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    return int(value) if value and value.isdigit() else None
 
 
 def _parse_int(value: str | None, minimum: int, maximum: int) -> int | None:

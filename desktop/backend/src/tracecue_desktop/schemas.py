@@ -50,7 +50,7 @@ class SearchRequest(ApiModel):
         default_factory=lambda: ["historical_event_log"], max_length=1
     )
     area_name: str | None = Field(default=None, max_length=200)
-    event_types: list[EventType] = Field(min_length=1, max_length=4)
+    event_types: list[EventType] = Field(min_length=1, max_length=1)
     preset_id: str | None = None
 
 
@@ -59,12 +59,12 @@ class SearchPresetRequest(ApiModel):
     nvr_id: str | None = None
     area_name: str = Field(default="", max_length=200)
     channel_ids: list[str] = Field(min_length=1, max_length=1)
-    event_types: list[EventType] = Field(min_length=1, max_length=4)
+    event_types: list[EventType] = Field(min_length=1, max_length=1)
 
 
 class TraceSessionRequest(ApiModel):
     channel_ids: list[str] = Field(min_length=1, max_length=1)
-    event_types: list[EventType] = Field(min_length=1, max_length=4)
+    event_types: list[EventType] = Field(min_length=1, max_length=1)
     preset_id: str | None = None
 
 

@@ -176,6 +176,10 @@ def create_app(
     def get_nvr(nvr_id: str) -> dict:
         return application_services.get_nvr(nvr_id)
 
+    @app.get(api + "/nvrs/{nvr_id}/details")
+    def get_nvr_details(nvr_id: str) -> dict:
+        return application_services.nvr_details(nvr_id)
+
     @app.patch(api + "/nvrs/{nvr_id}")
     def patch_nvr(nvr_id: str, request: NvrPatchRequest) -> dict:
         return application_services.patch_nvr(nvr_id, request.model_dump(exclude_none=True))
@@ -290,9 +294,6 @@ def create_app(
         duration_class: str | None = Query(
             default=None, pattern="^(unknown|under_5s|5_to_30s|over_30s)$"
         ),
-        event_type: str | None = Query(
-            default=None, pattern="^(motion|video_tamper|line_crossing|region_intrusion)$"
-        ),
         summary_only: bool = Query(default=False),
     ) -> dict:
         return application_services.trace_session_results(
@@ -303,7 +304,6 @@ def create_app(
             from_at=from_at,
             to_at=to_at,
             duration_class=duration_class,
-            event_type=event_type,
             summary_only=summary_only,
         )
 

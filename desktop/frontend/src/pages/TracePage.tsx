@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { ApiError, api, patch, post } from "../api";
 import { CameraSnapshot } from "../CameraSnapshot";
+import { EventTimeline, type TimelineWindow } from "../EventTimeline";
 import { useLoad } from "../hooks";
 import {
   dateToLocalInput,
@@ -24,7 +25,6 @@ import type {
   ReviewFilter,
   ReviewState,
   SearchPreset,
-  TraceDensityBucket,
   TraceSession,
   TraceSessionResults,
 } from "../types";
@@ -65,7 +65,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   const [channelsByNvr, setChannelsByNvr] = useState<Record<string, Channel[]>>({});
   const [auditsByNvr, setAuditsByNvr] = useState<Record<string, EventAudit>>({});
   const [selectedChannel, setSelectedChannel] = useState("");
-  const [eventTypes, setEventTypes] = useState<string[]>([]);
+  const [eventType, setEventType] = useState("");
   const [presetId, setPresetId] = useState("");
   const [presetName, setPresetName] = useState("");
   const [from, setFrom] = useState(dateToLocalInput(defaultWindow.from));
@@ -74,9 +74,8 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   const [results, setResults] = useState<TraceSessionResults | null>(null);
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("active");
   const [page, setPage] = useState(0);
-  const [focusBucket, setFocusBucket] = useState<TraceDensityBucket | null>(null);
+  const [focusWindow, setFocusWindow] = useState<TimelineWindow | null>(null);
   const [durationClass, setDurationClass] = useState<DurationClass | null>(null);
-  const [focusEventType, setFocusEventType] = useState<string | null>(null);
   const [secondaryActive, setSecondaryActive] = useState(false);
   const [timeTouched, setTimeTouched] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -104,15 +103,15 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
 
   const channels = useMemo(() => Object.values(channelsByNvr).flat(), [channelsByNvr]);
   const eligibleChannelIds = useMemo(() => new Set(channels.filter((channel) => {
-    if (!eventTypes.length) return true;
+    if (!eventType) return true;
     const audit = auditsByNvr[channel.nvr_id];
     if (!audit) return true;
-    return eventTypes.every((eventType) => audit.rules.some((rule) =>
+    return audit.rules.some((rule) =>
       rule.channel_external_id === channel.external_channel_id
       && rule.event_type === eventType
       && rule.state === "supported",
-    ));
-  }).map((channel) => channel.id)), [channels, auditsByNvr, eventTypes]);
+    );
+  }).map((channel) => channel.id)), [channels, auditsByNvr, eventType]);
 
   useEffect(() => {
     if (selectedChannel && !eligibleChannelIds.has(selectedChannel)) setSelectedChannel("");
@@ -124,7 +123,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   const windowValue = inputWindow(from, to);
   const validWindow = !Number.isNaN(windowValue.from.getTime())
     && !Number.isNaN(windowValue.to.getTime()) && windowValue.to > windowValue.from;
-  const primaryReady = Boolean(selectedChannel && eventTypes.length && validWindow);
+  const primaryReady = Boolean(selectedChannel && eventType && validWindow);
 
   function cameraName(channelId: string | null, fallback: string) {
     const channel = channels.find((item) => item.id === channelId);
@@ -146,27 +145,24 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       summary?: boolean;
       nextPage?: number;
       nextFilter?: ReviewFilter;
-      bucket?: TraceDensityBucket | null;
+      window?: TimelineWindow | null;
       duration?: DurationClass | null;
-      eventType?: string | null;
     } = {},
   ) {
     const summary = options.summary ?? !secondaryActive;
     const nextPage = options.nextPage ?? page;
     const nextFilter = options.nextFilter ?? reviewFilter;
-    const bucket = options.bucket === undefined ? focusBucket : options.bucket;
+    const selectedWindow = options.window === undefined ? focusWindow : options.window;
     const duration = options.duration === undefined ? durationClass : options.duration;
-    const eventType = options.eventType === undefined ? focusEventType : options.eventType;
     const query = new URLSearchParams({
       limit: String(PAGE_SIZE), offset: String(nextPage * PAGE_SIZE), review_state: nextFilter,
       summary_only: String(summary),
     });
-    if (bucket) {
-      query.set("from", bucket.start_at);
-      query.set("to", bucket.end_at);
+    if (selectedWindow) {
+      query.set("from", selectedWindow.start_at);
+      query.set("to", selectedWindow.end_at);
     }
     if (duration) query.set("duration_class", duration);
-    if (eventType) query.set("event_type", eventType);
     const value = await api<TraceSessionResults>(`/trace-sessions/${sessionId}/results?${query}`);
     setResults(value);
     setPage(nextPage);
@@ -184,19 +180,19 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       }
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [activeSession, working, secondaryActive, page, reviewFilter, focusBucket, durationClass, focusEventType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSession, working, secondaryActive, page, reviewFilter, focusWindow, durationClass]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function search(event: FormEvent) {
     event.preventDefault();
     if (!primaryReady) {
-      setNotice({ tone: "error", text: "请选择一个摄像机、至少一种事件类型和有效时间范围。" });
+      setNotice({ tone: "error", text: "请选择一个摄像机、一种事件类型和有效时间范围。" });
       return;
     }
     setBusy(true);
     setError(null);
     try {
       let session = await post<TraceSession>("/trace-sessions", {
-        channel_ids: [selectedChannel], event_types: eventTypes, preset_id: presetId || null,
+        channel_ids: [selectedChannel], event_types: [eventType], preset_id: presetId || null,
       });
       session = await post<TraceSession>(`/trace-sessions/${session.id}/iterations`, {
         from: windowValue.from.toISOString(), to: windowValue.to.toISOString(),
@@ -204,12 +200,11 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       });
       setActiveSession(session);
       setReviewFilter("active");
-      setFocusBucket(null);
+      setFocusWindow(null);
       setDurationClass(null);
-      setFocusEventType(null);
       setSecondaryActive(false);
       await loadResults(session.id, {
-        summary: true, nextPage: 0, nextFilter: "active", bucket: null, duration: null, eventType: null,
+        summary: true, nextPage: 0, nextFilter: "active", window: null, duration: null,
       });
     } catch (caught) {
       setError(caught as ApiError);
@@ -229,14 +224,14 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
     const preset = presets.data?.find((item) => item.id === id);
     if (!preset) return;
     setSelectedChannel(preset.channel_ids[0] ?? "");
-    setEventTypes(preset.event_types.filter((value) => eventDefinitions.some((item) => item.id === value)));
+    setEventType(preset.event_types.find((value) => eventDefinitions.some((item) => item.id === value)) ?? "");
   }
 
   async function savePreset() {
-    if (!presetName.trim() || !selectedChannel || !eventTypes.length) return;
+    if (!presetName.trim() || !selectedChannel || !eventType) return;
     try {
       const saved = await post<SearchPreset>("/search-presets", {
-        name: presetName.trim(), channel_ids: [selectedChannel], event_types: eventTypes,
+        name: presetName.trim(), channel_ids: [selectedChannel], event_types: [eventType],
       });
       await presets.refresh();
       setPresetId(saved.id);
@@ -260,19 +255,17 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   }
 
   async function showResults(options: {
-    bucket?: TraceDensityBucket | null; duration?: DurationClass | null; eventType?: string | null;
+    window?: TimelineWindow | null; duration?: DurationClass | null;
   } = {}) {
     if (!activeSession) return;
-    const bucket = options.bucket === undefined ? focusBucket : options.bucket;
+    const selectedWindow = options.window === undefined ? focusWindow : options.window;
     const duration = options.duration === undefined ? durationClass : options.duration;
-    const eventType = options.eventType === undefined ? focusEventType : options.eventType;
-    setFocusBucket(bucket);
+    setFocusWindow(selectedWindow);
     setDurationClass(duration);
-    setFocusEventType(eventType);
     setSecondaryActive(true);
     try {
       await loadResults(activeSession.id, {
-        summary: false, nextPage: 0, bucket, duration, eventType,
+        summary: false, nextPage: 0, window: selectedWindow, duration,
       });
     } catch (caught) {
       setError(caught as ApiError);
@@ -282,13 +275,12 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   async function resetSecondary() {
     if (!activeSession) return;
     setSecondaryActive(false);
-    setFocusBucket(null);
+    setFocusWindow(null);
     setDurationClass(null);
-    setFocusEventType(null);
     setReviewFilter("active");
     try {
       await loadResults(activeSession.id, {
-        summary: true, nextPage: 0, nextFilter: "active", bucket: null, duration: null, eventType: null,
+        summary: true, nextPage: 0, nextFilter: "active", window: null, duration: null,
       });
     } catch (caught) {
       setError(caught as ApiError);
@@ -373,11 +365,10 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       return groups;
     }, {}),
   );
-  const maxDensity = Math.max(1, ...(results?.density ?? []).map((item) => item.count));
   const selectedIteration = activeSession?.iterations[0];
 
   return <>
-    <Header eyebrow="EVENT → TRACE" title="从事件找到关键录像" description="先检索一个摄像机的事件统计，再用事件密度、时长或类型缩小范围；只有确认二次筛选后才加载事件画面。" action={<Button onClick={() => navigate("exports")}>查看候选与导出</Button>} />
+    <Header eyebrow="EVENT → TRACE" title="从事件找到关键录像" description="先选择一种事件和一个摄像机，再用可缩放时间轴定位事件区间；只有确认二次筛选后才加载事件画面。" action={<Button onClick={() => navigate("exports")}>查看候选与导出</Button>} />
     <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm leading-6 text-amber-950"><strong>证据边界：</strong>TraceCue 读取 NVR 已保存的事件日志。事件时长来自开始/停止日志配对；不能配对时显示“时长未知”，不会再伪装成 1 秒。</div>
     <Problem error={error ?? nvrs.error ?? presets.error ?? settings.error} />
 
@@ -388,8 +379,8 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
         <Button type="button" onClick={() => setQuickWindow(lastNightWindow(new Date(), settings.data?.night_start_hour ?? 18, settings.data?.night_end_hour ?? 6))}>填入昨晚</Button>
       </div>
 
-      <fieldset className="mt-6"><legend className="mb-3 text-sm font-semibold text-slate-700">1. 选择事件类型</legend><p className="mb-3 text-xs leading-5 text-slate-500">至少选择一种。选择 Smart 事件后，只显示已由设备接口证明具备全部所选能力的摄像机；连续录像不是事件筛选项。</p><div className="grid gap-3 md:grid-cols-2">
-        {(["ordinary", "smart"] as const).map((category) => <div key={category} className={`rounded-xl border p-4 ${category === "smart" ? "border-amber-200 bg-amber-50/60" : "border-slate-200 bg-slate-50"}`}><strong className="mb-3 block text-sm">{category === "smart" ? "Smart 事件 · 设备相关" : "普通事件 · 基础能力"}</strong><div className="flex flex-wrap gap-2">{eventDefinitions.filter((item) => item.category === category).map((item) => <label key={item.id} className={`cursor-pointer rounded-full border px-3 py-2 text-xs font-semibold ${eventTypes.includes(item.id) ? "border-emerald-500 bg-emerald-100 text-emerald-900" : "border-slate-200 bg-white text-slate-600"}`}><input className="sr-only" type="checkbox" checked={eventTypes.includes(item.id)} onChange={() => setEventTypes((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} />{item.label} · {capableCameraCount(item.id)} 台</label>)}</div></div>)}
+      <fieldset className="mt-6"><legend className="mb-3 text-sm font-semibold text-slate-700">1. 选择一种事件类型</legend><p className="mb-3 text-xs leading-5 text-slate-500">事件类型为单选。选择 Smart 事件后，只显示已由设备接口证明具备该能力的摄像机；连续录像不是事件筛选项。</p><div className="grid gap-3 md:grid-cols-2">
+        {(["ordinary", "smart"] as const).map((category) => <div key={category} className={`rounded-xl border p-4 ${category === "smart" ? "border-amber-200 bg-amber-50/60" : "border-slate-200 bg-slate-50"}`}><strong className="mb-3 block text-sm">{category === "smart" ? "Smart 事件 · 设备相关" : "普通事件 · 基础能力"}</strong><div className="flex flex-wrap gap-2">{eventDefinitions.filter((item) => item.category === category).map((item) => <label key={item.id} className={`cursor-pointer rounded-full border px-3 py-2 text-xs font-semibold ${eventType === item.id ? "border-emerald-500 bg-emerald-100 text-emerald-900" : "border-slate-200 bg-white text-slate-600"}`}><input className="sr-only" type="radio" name="trace-event-type" checked={eventType === item.id} onChange={() => setEventType(item.id)} />{item.label} · {capableCameraCount(item.id)} 台</label>)}</div></div>)}
       </div></fieldset>
 
       <fieldset className="mt-6"><legend className="mb-3 text-sm font-semibold text-slate-700">2. 选择一个摄像机</legend><div className="space-y-5">
@@ -402,7 +393,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
         <label className="min-w-56 text-xs font-semibold text-slate-600">加载常用筛选<select className={`${field} mt-1`} value={presetId} onChange={(event) => applyPreset(event.target.value)}><option value="">未加载</option>{presets.data?.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select></label>
         {presetId && <Button type="button" variant="ghost" onClick={deletePreset}>删除此筛选</Button>}
         <label className="min-w-56 text-xs font-semibold text-slate-600">保存当前筛选<input className={`${field} mt-1`} value={presetName} onChange={(event) => setPresetName(event.target.value)} placeholder="例如：夜间门口越界" /></label>
-        <Button type="button" onClick={savePreset} disabled={!presetName.trim() || !selectedChannel || !eventTypes.length}>保存筛选</Button>
+        <Button type="button" onClick={savePreset} disabled={!presetName.trim() || !selectedChannel || !eventType}>保存筛选</Button>
         <Button className="ml-auto" variant="primary" type="submit" disabled={busy || !primaryReady}>{busy ? "提交中…" : "检索事件统计"}</Button>
       </div>
     </form>
@@ -416,13 +407,13 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
     </section>}
 
     {activeSession && results && !working && <section className="mt-8">
-      <div className="mb-4"><p className="font-mono text-[10px] tracking-[.18em] text-emerald-700">SECONDARY FILTER</p><h2 className="mt-1 text-2xl font-bold">用事件统计缩小范围</h2><p className="mt-1 text-sm text-slate-500">共 {Object.values(results.counts).reduce((sum, value) => sum + value, 0)} 个事件。点击一个统计条件后，才加载事件列表与预览图。</p></div>
+      <div className="mb-4"><p className="font-mono text-[10px] tracking-[.18em] text-emerald-700">SECONDARY FILTER</p><h2 className="mt-1 text-2xl font-bold">用事件时间轴缩小范围</h2><p className="mt-1 text-sm text-slate-500">共 {Object.values(results.counts).reduce((sum, value) => sum + value, 0)} 个事件。绿色条块表示事件实际区间，颜色越深表示局部越密集。</p></div>
 
       {Object.values(results.counts).reduce((sum, value) => sum + value, 0) === 0 ? <Empty title="这个时间范围没有返回事件" description="请修改上方时间范围、摄像机或事件类型，再发起一次新的检索。" /> : <div className={`${card} mb-5 p-5`}>
-        {results.density.length > 0 && <div><strong className="text-sm">事件密度 · 点击时间桶查看事件</strong><div className="mt-3 flex min-h-24 items-end gap-1 overflow-x-auto rounded-xl bg-slate-50 p-3">{results.density.map((bucket) => <button type="button" key={bucket.start_at} title={`${formatDateTime(bucket.start_at)} · ${bucket.count} 个事件`} aria-label={`${formatDateTime(bucket.start_at)}，${bucket.count} 个事件`} onClick={() => void showResults({ bucket })} className={`min-w-7 rounded-t transition ${focusBucket?.start_at === bucket.start_at ? "bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"}`} style={{ height: `${Math.max(12, Math.round(bucket.count / maxDensity * 72))}px` }}><span className="sr-only">{bucket.count}</span></button>)}</div></div>}
-        <div className="mt-5"><strong className="text-sm">事件时长</strong><div className="mt-2 flex flex-wrap gap-2">{durationOptions.filter((option) => results.duration_buckets[option.id] > 0).map((option) => <button type="button" key={option.id} onClick={() => void showResults({ duration: option.id })} className={`rounded-full border px-3 py-2 text-xs font-semibold ${durationClass === option.id ? "border-amber-500 bg-amber-100 text-amber-900" : "border-slate-200 bg-white text-slate-600"}`}>{option.label} {results.duration_buckets[option.id]}</button>)}</div></div>
-        {Object.values(results.event_type_counts).filter((count) => count > 0).length > 1 && <div className="mt-5"><strong className="text-sm">事件类型构成</strong><div className="mt-2 flex flex-wrap gap-2">{Object.entries(results.event_type_counts).filter(([, count]) => count > 0).map(([type, count]) => <button type="button" key={type} onClick={() => void showResults({ eventType: type })} className={`rounded-full border px-3 py-2 text-xs font-semibold ${focusEventType === type ? "border-amber-500 bg-amber-100 text-amber-900" : "border-slate-200 bg-white text-slate-600"}`}>{eventPresentation(type)} {count}</button>)}</div></div>}
-        <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4"><Button variant="primary" onClick={() => void showResults()}>查看全部事件</Button>{secondaryActive && <Button onClick={() => void resetSecondary()}>返回统计，不加载画面</Button>}</div>
+        {selectedIteration && <EventTimeline from={selectedIteration.from} to={selectedIteration.to} events={results.timeline} selected={focusWindow} onSelect={(window) => void showResults({ window, duration: null })} />}
+        {results.timeline_truncated && <p className="mt-2 text-xs text-amber-700">事件超过 2000 个；时间轴仅绘制前 2000 个事件，请缩小初次检索范围。</p>}
+        <div className="mt-5"><strong className="text-sm">事件时长{focusWindow ? " · 已按所选子区间动态更新" : ""}</strong><div className="mt-2 flex flex-wrap gap-2">{durationOptions.filter((option) => results.duration_buckets[option.id] > 0).map((option) => <button type="button" key={option.id} onClick={() => void showResults({ duration: durationClass === option.id ? null : option.id })} className={`rounded-full border px-3 py-2 text-xs font-semibold ${durationClass === option.id ? "border-amber-500 bg-amber-100 text-amber-900" : "border-slate-200 bg-white text-slate-600"}`}>{option.label} {results.duration_buckets[option.id]}</button>)}</div></div>
+        <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4"><Button variant="primary" onClick={() => void showResults({ window: null, duration: null })}>查看全部事件</Button>{secondaryActive && <Button onClick={() => void resetSecondary()}>返回统计，不加载画面</Button>}</div>
       </div>}
 
       {secondaryActive && <>
@@ -433,7 +424,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
               : results.counts[filter.id];
           return <button type="button" key={filter.id} onClick={() => void chooseReviewFilter(filter.id)} className={`rounded-full border px-3 py-2 text-xs font-semibold ${reviewFilter === filter.id ? "border-emerald-600 bg-emerald-700 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{filter.label} {count}</button>;
         })}</div></div>
-        {results.items.length === 0 ? <Empty title="当前二次筛选没有事件" description="请选择其他密度时间桶、时长或事件类型。" /> : groupedResults.map(([date, items]) => <div key={date} className="mb-7"><h3 className="mb-3 text-lg font-bold">{date}</h3><div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">{items.map((item) => <EventCard key={item.id} item={item} cameraName={cameraName(item.media_channel_id, item.media_channel_label || item.source_channel.label)} preview={previews[item.id]} animation={animations[item.id]} onHover={() => ensureAnimation(item)} onReview={(state) => changeReview(item, state)} onCandidate={() => createCandidate(item)} />)}</div></div>)}
+        {results.items.length === 0 ? <Empty title="当前二次筛选没有事件" description="请在时间轴上选择其他事件条或子时间区间，也可以清除事件时长筛选。" /> : groupedResults.map(([date, items]) => <div key={date} className="mb-7"><h3 className="mb-3 text-lg font-bold">{date}</h3><div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">{items.map((item) => <EventCard key={item.id} item={item} cameraName={cameraName(item.media_channel_id, item.media_channel_label || item.source_channel.label)} preview={previews[item.id]} animation={animations[item.id]} onHover={() => ensureAnimation(item)} onReview={(state) => changeReview(item, state)} onCandidate={() => createCandidate(item)} />)}</div></div>)}
       </>}
     </section>}
   </>;

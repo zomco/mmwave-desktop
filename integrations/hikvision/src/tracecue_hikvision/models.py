@@ -34,6 +34,44 @@ class DeviceIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class NvrDeviceDetails:
+    device_name: str | None
+    device_type: str | None
+    model: str | None
+    firmware: str | None
+    serial_number: str | None = field(default=None, repr=False)
+    mac_address: str | None = None
+    device_id: str | None = None
+    firmware_released_date: str | None = None
+    encoder_version: str | None = None
+    encoder_released_date: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CameraDeviceDetails:
+    external_channel_id: str
+    name: str | None
+    online: bool | None
+    model: str | None = None
+    firmware: str | None = None
+    serial_number: str | None = field(default=None, repr=False)
+    device_id: str | None = None
+    protocol: str | None = None
+    address: str | None = None
+    manage_port: int | None = None
+    source_input_port: int | None = None
+    stream_type: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceDetailsReport:
+    observed_at: datetime
+    nvr: NvrDeviceDetails
+    cameras: tuple[CameraDeviceDetails, ...]
+    warnings: tuple[dict[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ClockObservation:
     observed_at: datetime
     device_time: datetime

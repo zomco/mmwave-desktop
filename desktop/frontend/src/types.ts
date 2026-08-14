@@ -12,6 +12,50 @@ export interface Nvr {
   utc_offset_minutes: number | null;
 }
 
+export interface NvrDeviceDetails {
+  device_name: string | null;
+  device_type: string | null;
+  model: string | null;
+  firmware: string | null;
+  serial_number: string | null;
+  mac_address: string | null;
+  device_id: string | null;
+  firmware_released_date: string | null;
+  encoder_version: string | null;
+  encoder_released_date: string | null;
+}
+
+export interface CameraDeviceDetails {
+  external_channel_id: string;
+  channel_id: string;
+  label: string;
+  name: string | null;
+  online: boolean | null;
+  model: string | null;
+  firmware: string | null;
+  serial_number: string | null;
+  device_id: string | null;
+  protocol: string | null;
+  address: string | null;
+  manage_port: number | null;
+  source_input_port: number | null;
+  stream_type: string | null;
+}
+
+export interface DeviceDetails {
+  observed_at: string;
+  nvr: NvrDeviceDetails;
+  cameras: CameraDeviceDetails[];
+  connection: {
+    host: string;
+    http_port: number;
+    use_https: boolean;
+    timezone: string | null;
+    clock_skew_ms: number | null;
+  };
+  warnings: { code: string; message: string }[];
+}
+
 export interface DiscoveredDevice {
   host: string;
   http_port: number;
@@ -99,10 +143,11 @@ export interface TraceSession {
   updated_at: string;
 }
 
-export interface TraceDensityBucket {
+export interface TraceTimelineEvent {
+  id: string;
   start_at: string;
   end_at: string;
-  count: number;
+  duration_ms: number | null;
 }
 
 export type DurationClass = "unknown" | "under_5s" | "5_to_30s" | "over_30s";
@@ -112,9 +157,10 @@ export interface TraceSessionResults {
   items: Bookmark[];
   total: number;
   counts: Record<ReviewState, number>;
-  density: TraceDensityBucket[];
+  timeline: TraceTimelineEvent[];
+  timeline_truncated: boolean;
+  selected_window: { start_at: string; end_at: string } | null;
   duration_buckets: Record<DurationClass, number>;
-  event_type_counts: Record<string, number>;
   limit: number;
   offset: number;
   has_more: boolean;
@@ -208,6 +254,7 @@ export interface ClipOrigin {
   event_type: string;
   classification: string | null;
   event_window: { start_at: string; end_at: string };
+  padding_trimmed_for_neighbor_events: boolean;
   candidate_window_capped: boolean;
   time_basis?: "nvr_index";
 }
