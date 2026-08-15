@@ -1,0 +1,7 @@
+# Optional local event visual-analysis runtime for Python 3.12/3.13.
+# Model weights are fetched and hash-verified separately.
+flatbuffers==25.12.19
+numpy==2.5.1
+onnxruntime==1.27.0
+packaging==26.2
+protobuf==7.35.1

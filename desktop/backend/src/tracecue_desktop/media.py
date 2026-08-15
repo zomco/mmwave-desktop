@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import time
@@ -30,6 +31,14 @@ class MediaResult:
     video_codec: str
     audio_codec: str | None
     duration_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class SampledFrames:
+    width: int
+    height: int
+    fps: float
+    frames: tuple[bytes, ...]
 
 
 class FFmpegRunner:
@@ -182,6 +191,62 @@ class FFmpegRunner:
             return output
         finally:
             partial.unlink(missing_ok=True)
+
+    def sample_bgr_frames(
+        self,
+        *,
+        playback_locator: str,
+        username: str,
+        password: str,
+        duration_seconds: float,
+        width: int = 416,
+        height: int = 416,
+        fps: float = 5,
+        cancel_requested: Callable[[], bool] | None = None,
+    ) -> SampledFrames:
+        """Let FFmpeg decode a bounded event window into fixed-size BGR tensors."""
+        if not 1 <= duration_seconds <= 30 or not 1 <= fps <= 10:
+            raise MediaError("MEDIA_SAMPLE_BOUNDS_INVALID", "Visual-analysis sampling bounds are invalid.", 422)
+        if not 64 <= width <= 640 or not 64 <= height <= 640:
+            raise MediaError("MEDIA_SAMPLE_BOUNDS_INVALID", "Visual-analysis frame size is invalid.", 422)
+        if cancel_requested and cancel_requested():
+            raise MediaError("JOB_CANCELLED", "Visual analysis was cancelled.", 409)
+        authenticated = _with_credentials(playback_locator, username, password)
+        command = [
+            str(self.ffmpeg_path), "-nostdin", "-hide_banner", "-loglevel", "error",
+            "-rtsp_transport", "tcp", "-timeout", str(self.connection_timeout_seconds * 1_000_000),
+            "-i", authenticated, "-map", "0:v:0", "-t", f"{duration_seconds:g}",
+            "-vf", f"fps={fps:g},scale={width}:{height}:flags=bilinear",
+            "-an", "-sn", "-dn", "-pix_fmt", "bgr24", "-f", "rawvideo", "pipe:1",
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                shell=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=min(self.total_timeout_seconds, max(30, int(duration_seconds) + 20)),
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise MediaError("MEDIA_SAMPLE_FAILED", "The event window could not be sampled.", 502) from exc
+        if cancel_requested and cancel_requested():
+            raise MediaError("JOB_CANCELLED", "Visual analysis was cancelled.", 409)
+        frame_bytes = width * height * 3
+        maximum_frames = int(math.ceil(duration_seconds * fps)) + 2
+        if (
+            completed.returncode != 0
+            or len(completed.stdout) < frame_bytes
+            or len(completed.stdout) > frame_bytes * maximum_frames
+        ):
+            raise MediaError("MEDIA_SAMPLE_FAILED", "FFmpeg returned invalid visual-analysis frames.", 422)
+        complete_frames = len(completed.stdout) // frame_bytes
+        frames = tuple(
+            completed.stdout[index * frame_bytes:(index + 1) * frame_bytes]
+            for index in range(complete_frames)
+        )
+        return SampledFrames(width, height, fps, frames)
 
     def _generate_jpeg(
         self,

@@ -22,10 +22,18 @@
   "ffmpeg_sha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
   "ffprobe_sha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2",
   "ffmpeg_h264_encoder": "libopenh264",
+  "vision_model": "YOLOX-Nano ONNX",
+  "vision_model_source": "Megvii-BaseDetection/YOLOX",
+  "vision_model_license": "Apache-2.0",
+  "vision_model_url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx",
+  "vision_model_sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
+  "vision_model_license_url": "https://raw.githubusercontent.com/Megvii-BaseDetection/YOLOX/0.1.1rc0/LICENSE",
+  "vision_model_license_sha256": "577c03d505ec80f667ebf96ebd0cc4f6825c817ca1088ee348c48aaabd51bd92",
   "release_blockers": [
     "mirror and review the complete corresponding source and notices for the static dependency set",
     "configure approved Windows code-signing credentials",
-    "complete signed-installer and authorized hardware compatibility tests"
+    "complete signed-installer and authorized hardware compatibility tests",
+    "complete day/night visual-validator accuracy and latency gates before bundling the optional model"
   ],
   "artifacts": [
     "TraceCue-0.1.0-win-x64.exe",

@@ -17,6 +17,7 @@ class AppConfig:
     preferred_port: int = 8765
     ffmpeg_path: Path = Path("ffmpeg")
     ffprobe_path: Path = Path("ffprobe")
+    vision_model_path: Path | None = None
     job_poll_seconds: float = 0.25
 
     @property
@@ -42,12 +43,14 @@ class AppConfig:
         frontend_dir = _frontend_path(executable_dir)
         ffmpeg = _media_tool_path("ffmpeg", executable_dir)
         ffprobe = _media_tool_path("ffprobe", executable_dir)
+        vision_model = _vision_model_path(executable_dir)
         return cls(
             data_dir=data_dir,
             clip_dir=clip_dir,
             frontend_dir=frontend_dir,
             ffmpeg_path=ffmpeg,
             ffprobe_path=ffprobe,
+            vision_model_path=vision_model,
         )
 
     def prepare(self) -> None:
@@ -86,3 +89,15 @@ def _frontend_path(executable_dir: Path, module_file: Path | None = None) -> Pat
         (candidate for candidate in candidates if (candidate / "index.html").is_file()),
         None,
     )
+
+
+def _vision_model_path(executable_dir: Path) -> Path | None:
+    override = os.environ.get("TRACECUE_VISION_MODEL_PATH")
+    if override:
+        return Path(override)
+    candidates = [executable_dir / "models" / "yolox_nano.onnx"]
+    module_path = Path(__file__).resolve()
+    if len(module_path.parents) > 4:
+        repository_root = module_path.parents[4]
+        candidates.append(repository_root / "packaging" / "windows" / "models" / "yolox_nano.onnx")
+    return next((candidate for candidate in candidates if candidate.is_file()), None)

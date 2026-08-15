@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Iterator, Sequence
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 MIGRATION_1 = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -292,6 +292,22 @@ UPDATE settings SET value_json='0' WHERE key='pre_roll_ms' AND value_json='5000'
 UPDATE settings SET value_json='0' WHERE key='post_roll_ms' AND value_json='10000';
 """
 
+MIGRATION_7 = """
+CREATE TABLE IF NOT EXISTS event_visual_analyses (
+    interval_id TEXT PRIMARY KEY REFERENCES intervals(id) ON DELETE CASCADE,
+    job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued', 'analyzing', 'ready', 'failed')),
+    verdict TEXT CHECK(verdict IN (
+        'confirmed_trigger', 'target_present_no_trigger',
+        'no_supported_target_detected', 'uncertain'
+    ) OR verdict IS NULL),
+    result_json TEXT,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS event_visual_analyses_verdict ON event_visual_analyses(verdict, updated_ms);
+"""
+
 
 DEFAULT_SETTINGS = {
     "clip_quota_bytes": 10 * 1024 * 1024 * 1024,
@@ -361,6 +377,13 @@ class Database:
                     "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
                     (6, now_ms),
                 )
+                current = 6
+            if current < 7:
+                connection.executescript(MIGRATION_7)
+                connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_ms) VALUES (?, ?)",
+                    (7, now_ms),
+                )
             for key, value in DEFAULT_SETTINGS.items():
                 connection.execute(
                     "INSERT OR IGNORE INTO settings(key, value_json) VALUES (?, ?)",
@@ -407,6 +430,16 @@ class Database:
                     """,
                     (now_ms,),
                 )
+            connection.execute(
+                """
+                UPDATE event_visual_analyses SET status='failed', updated_ms=?
+                WHERE status IN ('queued', 'analyzing')
+                  AND job_id IN (
+                      SELECT id FROM jobs WHERE state IN ('failed', 'cancelled', 'interrupted')
+                  )
+                """,
+                (now_ms,),
+            )
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

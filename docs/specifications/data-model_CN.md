@@ -23,6 +23,7 @@ Desktop 初期使用 SQLite。表使用稳定不透明文本 ID 和 UTC epoch �
 | `search_results` | 检索作业、Interval | 检索会话到事件的精确来源关系 |
 | `nvr_event_audits` | NVR、安全摘要 JSON、观测时间 | 只读事件规则/通知快照 |
 | `event_previews` | Interval、作业、状态、相对路径 | 派生 JPEG 预览索引 |
+| `event_visual_analyses` | Interval、作业、状态、判定、有界结果 JSON | 针对单个 NVR 事件的可选本地检测/跟踪/规则几何证据 |
 
 ## 约束
 
@@ -56,5 +57,6 @@ resolved_start_ms/resolved_end_ms
 - 录像 Span 是可刷新缓存；
 - Clip 是受配额管理的派生产物；
 - 预览 JPEG 也是派生产物，位于同一受校验根目录，并随对应 NVR 来源记录删除；
+- 视觉分析行属于派生证据，只保留模型身份和有界摘要，不保存帧、凭据或回放定位符，并随来源 Interval 级联删除；
 - 原始轨迹点只作有界诊断，默认不无限保存；
 - 删除 clip 同时删除索引和已确认位于根目录内的文件；删除 Interval 不影响 NVR 媒体。

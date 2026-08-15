@@ -6,9 +6,10 @@ from pathlib import Path
 import pytest
 
 from tracecue_desktop.config import AppConfig
-from tracecue_desktop.media import MediaResult
+from tracecue_desktop.media import MediaResult, SampledFrames
 from tracecue_desktop.secrets import InMemorySecretStore
 from tracecue_desktop.services import DesktopServices
+from tracecue_desktop.vision import VisualAnalysisResult
 from tracecue_hikvision import (
     CapabilityEvidence,
     CapabilityReport,
@@ -26,6 +27,7 @@ from tracecue_hikvision import (
     NvrDeviceDetails,
     Page,
     RecordingSpan,
+    RuleOverlay,
 )
 
 
@@ -97,6 +99,14 @@ class FakeAdapter:
                     NOW.replace(second=9),
                 ),
             )
+        elif query.start_at <= NOW < query.end_at and "line_crossing" in query.event_types:
+            items = (
+                HistoricalEvent(
+                    "1", "line_crossing", NOW,
+                    "log.hikvision.com/Alarm/lineDetection/1", "fixture-line-event-1",
+                    NOW.replace(second=9),
+                ),
+            )
         return HistoricalEventResult(items)
 
     def inspect_event_settings(self, channels):
@@ -106,6 +116,12 @@ class FakeAdapter:
                 EventRuleStatus(
                     "1", "101", "motion", "supported", True, True,
                     60, 1, 1, "/motionDetection",
+                ),
+                EventRuleStatus(
+                    "1", "101", "line_crossing", "supported", True, True,
+                    60, 1, 1, "/lineDetection", overlays=(
+                        RuleOverlay("line", 1000, 1000, ((500, 0), (500, 1000))),
+                    ),
                 ),
             ),
         )
@@ -162,11 +178,42 @@ class FakeMediaRunner:
         duration_seconds, cancel_requested
     ):
         assert playback_locator.startswith("rtsp://192.0.2.10/fixture?")
-        assert duration_seconds == 3
+        assert 1 <= duration_seconds <= 5
         output = self.clip_root / "animations" / f"{animation_id}.webp"
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"RIFFfixtureWEBP")
         return output
+
+    def sample_bgr_frames(
+        self, *, playback_locator, username, password, duration_seconds,
+        width, height, fps, cancel_requested
+    ):
+        assert playback_locator.startswith("rtsp://192.0.2.10/fixture?")
+        assert password == "secret-password"
+        assert 1 <= duration_seconds <= 30
+        assert not cancel_requested()
+        return SampledFrames(width, height, fps, (bytes(width * height * 3),) * 3)
+
+
+class FakeVisualAnalyzer:
+    def availability(self):
+        return {
+            "available": True,
+            "code": None,
+            "message": "fixture visual analyzer",
+            "model_id": "fixture-model:abc",
+            "supported_event_types": ["line_crossing", "region_intrusion"],
+            "target_classes": ["person"],
+        }
+
+    def analyze(self, *, frames, width, height, fps, event_type, overlays):
+        assert len(frames) == 3
+        assert (width, height, fps) == (416, 416, 5)
+        assert event_type in {"line_crossing", "region_intrusion"}
+        return VisualAnalysisResult(
+            "confirmed_trigger", "trajectory_matches_rule", 0.91, 2_000,
+            ("person",), 1, 3, 3, "fixture-model:abc",
+        )
 
 
 class FakeShareServer:
@@ -207,6 +254,7 @@ def services(tmp_path: Path) -> DesktopServices:
                 "192.0.2.20", 80, False, "Discovered recorder", "fixture-discovery", ("NetworkVideoTransmitter",)
             ),
         ),
+        visual_analyzer=FakeVisualAnalyzer(),
     )
 
 

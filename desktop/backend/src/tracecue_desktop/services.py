@@ -33,6 +33,7 @@ from .errors import AppError, MediaError
 from .media import FFmpegRunner
 from .secrets import SecretStore, WindowsDpapiSecretStore
 from .sharing import LanClipShareServer
+from .vision import VisualAnalyzer, VisionError, build_visual_analyzer
 
 
 CHANNEL_SNAPSHOT_TTL_MS = 10 * 60_000
@@ -151,6 +152,7 @@ class DesktopServices:
         media_runner: FFmpegRunner | None = None,
         device_discoverer: Callable[[float], tuple[Any, ...]] | None = None,
         share_server: Any | None = None,
+        visual_analyzer: VisualAnalyzer | None = None,
     ):
         self.config = config
         config.prepare()
@@ -163,7 +165,11 @@ class DesktopServices:
         )
         self.device_discoverer = device_discoverer or discover_devices
         self.share_server = share_server or LanClipShareServer()
+        self.visual_analyzer = visual_analyzer or build_visual_analyzer(config.vision_model_path)
         self.worker = JobWorker(self)
+
+    def visual_analysis_availability(self) -> dict[str, Any]:
+        return self.visual_analyzer.availability()
 
     def discover_nvrs(self, timeout_seconds: float) -> list[dict[str, Any]]:
         try:
@@ -1294,6 +1300,117 @@ class DesktopServices:
             raise AppError("STORAGE_ANIMATION_MISSING", "Event hover preview file is missing.", 410)
         return path
 
+    def enqueue_event_visual_analysis(self, bookmark_id: str) -> dict[str, Any]:
+        interval = self.database.one("SELECT * FROM intervals WHERE id=?", (bookmark_id,))
+        if not interval:
+            raise AppError("TIMELINE_INTERVAL_NOT_FOUND", "Event was not found.", 404)
+        attributes = json.loads(interval["attributes_json"])
+        event_type = str(
+            attributes.get("hikvision", {}).get("canonical_event_type")
+            or interval["event_type"].removeprefix("nvr.")
+        )
+        if event_type not in {"line_crossing", "region_intrusion"}:
+            raise AppError(
+                "VISION_EVENT_TYPE_UNSUPPORTED",
+                "Visual validation currently supports line crossing and region intrusion.",
+                422,
+            )
+        available = self.visual_analysis_availability()
+        if not available.get("available"):
+            raise AppError(
+                str(available.get("code") or "VISION_ANALYZER_UNAVAILABLE"),
+                str(available.get("message") or "Visual analysis is unavailable."),
+                409,
+                {"visual_analysis": available},
+            )
+        channel_id = interval["nvr_channel_id"] or self._mapped_media_channel(interval)
+        channel = self._channel_row(channel_id)
+        analysis_start_ms = max(0, int(interval["resolved_start_ms"]) - 5_000)
+        desired_end_ms = max(
+            int(interval["resolved_end_ms"]) + 5_000,
+            int(interval["resolved_start_ms"]) + 10_000,
+        )
+        analysis_end_ms = min(analysis_start_ms + 30_000, desired_end_ms)
+        overlays = self._visual_rule_overlays(channel, event_type)
+        analysis_signature = hashlib.sha256(
+            json.dumps(
+                {
+                    "event_type": event_type,
+                    "model_id": available.get("model_id"),
+                    "overlays": overlays,
+                    "sample": {"width": 416, "height": 416, "fps": 5},
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        existing = self.database.one(
+            "SELECT * FROM event_visual_analyses WHERE interval_id=?", (bookmark_id,)
+        )
+        if existing and existing["status"] in {"queued", "analyzing"}:
+            return self._public_event_visual_analysis(existing)
+        if existing and existing["status"] == "ready":
+            cached = json.loads(existing["result_json"] or "{}")
+            if cached.get("analysis_signature") == analysis_signature:
+                return self._public_event_visual_analysis(existing)
+        job_id = new_id("job")
+        timestamp = now_ms()
+        payload = {
+            "interval_id": bookmark_id,
+            "channel_id": channel_id,
+            "event_type": event_type,
+            "start_ms": analysis_start_ms,
+            "end_ms": analysis_end_ms,
+            "overlays": overlays,
+            "analysis_signature": analysis_signature,
+        }
+        with self.database.transaction() as db:
+            db.execute(
+                "INSERT INTO jobs(id, kind, state, payload_json, attempts, created_ms, updated_ms) "
+                "VALUES (?, 'event_visual_analysis', 'queued', ?, 0, ?, ?)",
+                (job_id, json.dumps(payload), timestamp, timestamp),
+            )
+            db.execute(
+                """
+                INSERT INTO event_visual_analyses(
+                    interval_id, job_id, status, verdict, result_json, created_ms, updated_ms
+                ) VALUES (?, ?, 'queued', NULL, NULL, ?, ?)
+                ON CONFLICT(interval_id) DO UPDATE SET job_id=excluded.job_id,
+                    status='queued', verdict=NULL, result_json=NULL, updated_ms=excluded.updated_ms
+                """,
+                (bookmark_id, job_id, timestamp, timestamp),
+            )
+        return self.get_event_visual_analysis(bookmark_id)
+
+    def get_event_visual_analysis(self, bookmark_id: str) -> dict[str, Any]:
+        if not self.database.one("SELECT id FROM intervals WHERE id=?", (bookmark_id,)):
+            raise AppError("TIMELINE_INTERVAL_NOT_FOUND", "Event was not found.", 404)
+        row = self.database.one(
+            "SELECT * FROM event_visual_analyses WHERE interval_id=?", (bookmark_id,)
+        )
+        if not row:
+            raise AppError(
+                "VISION_ANALYSIS_NOT_REQUESTED", "Visual analysis has not been requested.", 404
+            )
+        return self._public_event_visual_analysis(row)
+
+    def _visual_rule_overlays(
+        self, channel: dict[str, Any], event_type: str
+    ) -> list[dict[str, Any]]:
+        audit = self.database.one(
+            "SELECT report_json FROM nvr_event_audits WHERE nvr_id=?", (channel["nvr_id"],)
+        )
+        if not audit:
+            return []
+        report = json.loads(audit["report_json"])
+        rules = [
+            rule for rule in report.get("rules", [])
+            if str(rule.get("channel_external_id")) == str(channel["external_channel_id"])
+            and rule.get("event_type") == event_type
+            and rule.get("enabled") is not False
+        ]
+        return [overlay for rule in rules for overlay in rule.get("overlays", [])][:8]
+
     def _derived_path_exists(self, relative_path: str | None) -> bool:
         if not relative_path:
             return False
@@ -1863,6 +1980,8 @@ class DesktopServices:
             return self._run_event_preview(job["id"], payload)
         if job["kind"] == "event_animation":
             return self._run_event_animation(job["id"], payload)
+        if job["kind"] == "event_visual_analysis":
+            return self._run_event_visual_analysis(job["id"], payload)
         if job["kind"] == "channel_snapshot":
             return self._run_channel_snapshot(job["id"], payload)
         raise AppError("JOB_KIND_UNSUPPORTED", "Job kind is not supported.", 500)
@@ -2088,6 +2207,140 @@ class DesktopServices:
             (relative_path, now_ms(), payload["interval_id"]),
         )
         return {"interval_id": payload["interval_id"]}
+
+    def _run_event_visual_analysis(
+        self, job_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        interval_id = payload["interval_id"]
+        self._set_job_progress(job_id, 0.05)
+        self.database.execute(
+            "UPDATE event_visual_analyses SET status='analyzing', updated_ms=? WHERE interval_id=?",
+            (now_ms(), interval_id),
+        )
+        channel = self._channel_row(payload["channel_id"])
+        nvr = self._nvr_row(channel["nvr_id"])
+        if not channel["primary_track_id"]:
+            raise AppError(
+                "CAPABILITY_PLAYBACK_TRACK_UNKNOWN", "Channel has no playback track identity.", 422
+            )
+        query = RecordingQuery(
+            channel["external_channel_id"],
+            channel["primary_track_id"],
+            from_utc_millis(payload["start_ms"]),
+            from_utc_millis(payload["end_ms"]),
+        )
+        adapter = self._adapter_for_row(nvr)
+        self._set_job_progress(job_id, 0.20)
+        try:
+            spans = adapter.search_all_recordings(query)
+            resolution = adapter.resolve_media(spans, query.start_at, query.end_at)
+        except HikvisionError as exc:
+            raise AppError(exc.code, "NVR visual-analysis media could not be resolved.", 502) from exc
+        if not resolution.playback_segments:
+            raise AppError(
+                "RECORDING_NOT_FOUND", "No NVR recording covers the visual-analysis window.", 409
+            )
+        segment = next(
+            (
+                candidate for candidate in resolution.playback_segments
+                if utc_millis(candidate.start_at) <= payload["start_ms"] < utc_millis(candidate.end_at)
+            ),
+            resolution.playback_segments[0],
+        )
+        sample_start_ms = max(payload["start_ms"], utc_millis(segment.start_at))
+        sample_end_ms = min(payload["end_ms"], utc_millis(segment.end_at))
+        if sample_end_ms <= sample_start_ms:
+            raise AppError(
+                "RECORDING_GAP", "The visual-analysis event window is not continuously covered.", 409
+            )
+        username, password = self.secret_store.get(nvr["secret_ref"])
+        playback_locator = self._media_locator(
+            segment.playback_locator,
+            nvr,
+            from_utc_millis(sample_start_ms),
+            from_utc_millis(sample_end_ms),
+        )
+        self._set_job_progress(job_id, 0.35)
+        frames = self.media_runner.sample_bgr_frames(
+            playback_locator=playback_locator,
+            username=username,
+            password=password,
+            duration_seconds=(sample_end_ms - sample_start_ms) / 1_000,
+            width=416,
+            height=416,
+            fps=5,
+            cancel_requested=lambda: self._cancel_requested(job_id),
+        )
+        self._set_job_progress(job_id, 0.65)
+        try:
+            analysis = self.visual_analyzer.analyze(
+                frames=frames.frames,
+                width=frames.width,
+                height=frames.height,
+                fps=frames.fps,
+                event_type=payload["event_type"],
+                overlays=payload.get("overlays") or [],
+            )
+        except VisionError as exc:
+            raise AppError(exc.code, exc.message, 422) from exc
+        result = analysis.as_dict()
+        result["analysis_signature"] = payload["analysis_signature"]
+        result["analyzed_window"] = {
+            "start_at": rfc3339(sample_start_ms),
+            "end_at": rfc3339(sample_end_ms),
+        }
+        result["trigger_at"] = (
+            rfc3339(sample_start_ms + analysis.trigger_offset_ms)
+            if analysis.trigger_offset_ms is not None else None
+        )
+        result["evidence_animation_ready"] = False
+        if analysis.verdict == "confirmed_trigger" and analysis.trigger_offset_ms is not None:
+            trigger_ms = sample_start_ms + analysis.trigger_offset_ms
+            evidence_start_ms = max(sample_start_ms, trigger_ms - 1_000)
+            evidence_end_ms = min(sample_end_ms, trigger_ms + 4_000)
+            if evidence_end_ms - evidence_start_ms >= 1_000:
+                try:
+                    evidence_path = self.media_runner.generate_animation(
+                        animation_id=stable_id("animation", interval_id),
+                        playback_locator=self._media_locator(
+                            segment.playback_locator,
+                            nvr,
+                            from_utc_millis(evidence_start_ms),
+                            from_utc_millis(evidence_end_ms),
+                        ),
+                        username=username,
+                        password=password,
+                        duration_seconds=(evidence_end_ms - evidence_start_ms) / 1_000,
+                        cancel_requested=lambda: self._cancel_requested(job_id),
+                    )
+                    relative_path = evidence_path.resolve().relative_to(
+                        self.config.clip_dir.resolve()
+                    ).as_posix()
+                    timestamp = now_ms()
+                    self.database.execute(
+                        """
+                        INSERT INTO event_animations(
+                            interval_id, job_id, status, relative_path, created_ms, updated_ms
+                        ) VALUES (?, ?, 'ready', ?, ?, ?)
+                        ON CONFLICT(interval_id) DO UPDATE SET job_id=excluded.job_id,
+                            status='ready', relative_path=excluded.relative_path,
+                            updated_ms=excluded.updated_ms
+                        """,
+                        (interval_id, job_id, relative_path, timestamp, timestamp),
+                    )
+                    result["evidence_animation_ready"] = True
+                except MediaError:
+                    result["evidence_animation_ready"] = False
+        self._set_job_progress(job_id, 0.95)
+        self.database.execute(
+            """
+            UPDATE event_visual_analyses
+            SET status='ready', verdict=?, result_json=?, updated_ms=?
+            WHERE interval_id=?
+            """,
+            (analysis.verdict, json.dumps(result), now_ms(), interval_id),
+        )
+        return {"interval_id": interval_id, **result}
 
     def _run_channel_snapshot(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         cached = self.database.one(
@@ -2467,8 +2720,10 @@ class DesktopServices:
             "updated_at": rfc3339(row["updated_ms"]),
         }
 
-    @staticmethod
-    def _public_interval(row: dict[str, Any]) -> dict[str, Any]:
+    def _public_interval(self, row: dict[str, Any]) -> dict[str, Any]:
+        analysis = self.database.one(
+            "SELECT * FROM event_visual_analyses WHERE interval_id=?", (row["id"],)
+        )
         return {
             "id": row["id"],
             "source": {
@@ -2497,6 +2752,24 @@ class DesktopServices:
             } if row["media_start_ms"] is not None else None,
             "tags": json.loads(row["tags_json"]),
             "attributes": json.loads(row["attributes_json"]),
+            "visual_analysis": (
+                self._public_event_visual_analysis(analysis) if analysis else None
+            ),
+        }
+
+    def _public_event_visual_analysis(self, row: dict[str, Any]) -> dict[str, Any]:
+        result = json.loads(row["result_json"]) if row.get("result_json") else None
+        return {
+            "bookmark_id": row["interval_id"],
+            "job_id": row["job_id"],
+            "status": row["status"],
+            "progress": self._job_progress(row["job_id"]),
+            "verdict": row.get("verdict"),
+            "result": result,
+            "evidence_content_url": (
+                f"/api/v1/bookmarks/{row['interval_id']}/animation/content"
+                if result and result.get("evidence_animation_ready") else None
+            ),
         }
 
     @staticmethod
@@ -2670,6 +2943,12 @@ class JobWorker:
                     "UPDATE event_animations SET status='failed', updated_ms=? WHERE interval_id=?",
                     (now_ms(), payload["interval_id"]),
                 )
+            if job["kind"] == "event_visual_analysis":
+                payload = json.loads(job["payload_json"])
+                self.services.database.execute(
+                    "UPDATE event_visual_analyses SET status='failed', updated_ms=? WHERE interval_id=?",
+                    (now_ms(), payload["interval_id"]),
+                )
             if job["kind"] == "channel_snapshot":
                 self._mark_snapshot_failed(job)
         except BaseException:
@@ -2693,6 +2972,12 @@ class JobWorker:
                 payload = json.loads(job["payload_json"])
                 self.services.database.execute(
                     "UPDATE event_animations SET status='failed', updated_ms=? WHERE interval_id=?",
+                    (now_ms(), payload["interval_id"]),
+                )
+            if job["kind"] == "event_visual_analysis":
+                payload = json.loads(job["payload_json"])
+                self.services.database.execute(
+                    "UPDATE event_visual_analyses SET status='failed', updated_ms=? WHERE interval_id=?",
                     (now_ms(), payload["interval_id"]),
                 )
             if job["kind"] == "channel_snapshot":

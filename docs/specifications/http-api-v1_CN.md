@@ -99,6 +99,8 @@ GET  /api/v1/bookmarks/{bookmark_id}/preview/content
 GET  /api/v1/bookmarks/{bookmark_id}/animation
 POST /api/v1/bookmarks/{bookmark_id}/animation
 GET  /api/v1/bookmarks/{bookmark_id}/animation/content
+GET  /api/v1/bookmarks/{bookmark_id}/visual-analysis
+POST /api/v1/bookmarks/{bookmark_id}/visual-analysis
 ```
 
 请求示例：
@@ -116,6 +118,8 @@ GET  /api/v1/bookmarks/{bookmark_id}/animation/content
 ```
 
 实际目标区域恰好是一个稳定摄像机 ID；浏览器按 NVR 分组并用单选方式展示摄像机画面，因此不再提供录像机或自由文本区域筛选。`channel_ids` 必须恰好有一项。`event_types` 也必须恰好包含 `motion`、`video_tamper`、`line_crossing` 或 `region_intrusion` 中的一项；连续录像、Smart 兜底标签和多事件类型请求都会被拒绝。Preset 保存一个摄像机 ID 与一个事件标签。作业读取有界历史报警日志，并在同摄像机、同类型、最长一小时范围内配对开始/停止条目。有配对时保存真实 `event_duration_ms`；无法配对时保存 `null` 及 `duration_source: "unknown"`。`result.truncated` 表示适配器达到上限。只有生成预览/片段时才执行录像检索。`search-jobs/{job_id}/results?limit=12&offset=0` 返回有界分页、总数和 `has_more`，且只包含本次检索产生的事件。JPEG 预览异步生成并按事件缓存；预览和动图状态响应包含 `0` 到 `1` 的归一化作业 `progress`，它表示处理阶段而非上游字节计数；动图路由按需生成经过校验的有界 3 秒 WebP 悬停预览。全部文件均在派生媒体根目录原子写入。
+
+视觉分析是可选能力，目前只接受 `line_crossing` 和 `region_intrusion` 书签。分析处于排队、运行或就绪时，POST 保持幂等。它解析最长 30 秒的上下文窗口，由 FFmpeg 输出固定尺寸 BGR 帧，使用已配置的本地 ONNX 检测器识别并跟踪支持的行人/车辆目标，再把目标落地轨迹与缓存中已有实证的规则线/多边形进行比较。缓存响应返回 `confirmed_trigger`、`target_present_no_trigger`、`no_supported_target_detected` 或 `uncertain`，并包含模型身份、分析时间窗、可选视觉触发时刻和阶段进度。负面证据绝不修改或删除 NVR 书签。确认触发时，可以把悬停 WebP 原子替换为以重建触发时刻为中心的短证据窗口。
 
 Trace 会话持久保存一个摄像机/事件类型范围，并只接受一个有界时间迭代。先用 `{"channel_ids":["channel_01"],"event_types":["motion"]}` 创建会话，再追加 `{"from":"2026-08-12T18:00:00+08:00","to":"2026-08-13T06:00:00+08:00","label":"时间范围"}`。重复相同时间窗保持幂等；第二个不同时间窗返回 `TRACE_SESSION_WINDOW_FIXED`，客户端必须新建检索。为保持 schema 兼容，持久化作业 kind 仍是 `recording_search`，但事件来源已经是历史报警日志。
 

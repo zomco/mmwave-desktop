@@ -15,6 +15,7 @@ import {
 import type { View, NoticeSetter } from "../App";
 import type {
   ActivityMode,
+  AppStatus,
   AppSettings,
   Bookmark,
   Channel,
@@ -22,6 +23,7 @@ import type {
   EventAnimation,
   EventAudit,
   EventPreview,
+  EventVisualAnalysis,
   Nvr,
   ReviewFilter,
   ReviewState,
@@ -64,6 +66,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   const nvrs = useLoad(() => api<Nvr[]>("/nvrs"));
   const presets = useLoad(() => api<SearchPreset[]>("/search-presets"));
   const settings = useLoad(() => api<AppSettings>("/settings"));
+  const applicationStatus = useLoad(() => api<AppStatus>("/status"));
   const defaultWindow = useMemo(() => lastNightWindow(new Date()), []);
   const [channelsByNvr, setChannelsByNvr] = useState<Record<string, Channel[]>>({});
   const [auditsByNvr, setAuditsByNvr] = useState<Record<string, EventAudit>>({});
@@ -88,6 +91,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   const [busy, setBusy] = useState(false);
   const [previews, setPreviews] = useState<Record<string, EventPreview>>({});
   const [animations, setAnimations] = useState<Record<string, EventAnimation>>({});
+  const [visualAnalyses, setVisualAnalyses] = useState<Record<string, EventVisualAnalysis>>({});
 
   useEffect(() => {
     for (const nvr of nvrs.data ?? []) {
@@ -408,17 +412,47 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
     } catch { /* Static preview remains available. */ }
   }
 
+  async function ensureVisualAnalysis(item: Bookmark) {
+    const capability = applicationStatus.data?.visual_analysis;
+    const itemEventType = item.attributes.hikvision?.canonical_event_type
+      ?? item.event_type.replace(/^nvr\./, "");
+    if (!capability?.available || !capability.supported_event_types.includes(itemEventType)) return;
+    const current = visualAnalyses[item.id] ?? item.visual_analysis ?? undefined;
+    if (current?.status === "ready") return;
+    try {
+      let value = await post<EventVisualAnalysis>(`/bookmarks/${item.id}/visual-analysis`);
+      setVisualAnalyses((values) => ({ ...values, [item.id]: value }));
+      for (let index = 0; index < 180 && ["queued", "analyzing"].includes(value.status); index += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        value = await api<EventVisualAnalysis>(`/bookmarks/${item.id}/visual-analysis`);
+        setVisualAnalyses((values) => ({ ...values, [item.id]: value }));
+      }
+    } catch { /* NVR event metadata remains usable when optional visual analysis fails. */ }
+  }
+
   useEffect(() => {
     if (!secondaryActive) return;
-    for (const item of results?.items ?? []) void ensurePreview(item);
-  }, [secondaryActive, results?.items]); // eslint-disable-line react-hooks/exhaustive-deps
+    for (const item of results?.items ?? []) {
+      void ensurePreview(item);
+      void ensureVisualAnalysis(item);
+    }
+  }, [secondaryActive, results?.items, applicationStatus.data?.visual_analysis.available]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!nvrs.loading && nvrs.data?.length === 0) {
     return <><Header eyebrow="EVENT → TRACE" title="从事件找到关键录像" description="先添加 NVR，再用时间、单个摄像机画面和事件类型检索目标录像。" /><Empty title="还没有可检索的 NVR" description="请先在设备中心添加设备。" action={<Button variant="primary" onClick={() => navigate("devices")}>前往设备中心</Button>} /></>;
   }
 
+  const visualRank = (item: Bookmark) => {
+    const verdict = (visualAnalyses[item.id] ?? item.visual_analysis)?.verdict;
+    if (verdict === "confirmed_trigger") return 0;
+    if (!verdict || verdict === "uncertain") return 1;
+    return 2;
+  };
+  const rankedItems = [...(results?.items ?? [])].sort((left, right) =>
+    visualRank(left) - visualRank(right) || new Date(right.start_at).getTime() - new Date(left.start_at).getTime(),
+  );
   const groupedResults = Object.entries(
-    (results?.items ?? []).reduce<Record<string, Bookmark[]>>((groups, item) => {
+    rankedItems.reduce<Record<string, Bookmark[]>>((groups, item) => {
       const key = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(item.start_at));
       (groups[key] ??= []).push(item);
       return groups;
@@ -429,6 +463,9 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   return <>
     <Header eyebrow="EVENT → TRACE" title="从事件找到关键录像" description="先选择一种事件和一个摄像机，再用可缩放时间轴定位事件区间；只有确认二次筛选后才加载事件画面。" action={<Button onClick={() => navigate("exports")}>查看候选与导出</Button>} />
     <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm leading-6 text-amber-950"><strong>证据边界：</strong>TraceCue 读取 NVR 已保存的事件日志。事件时长来自开始/停止日志配对；不能配对时显示“时长未知”，不会再伪装成 1 秒。</div>
+    {applicationStatus.data?.visual_analysis.available
+      ? <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm leading-6 text-emerald-950"><strong>独立视觉验证已启用：</strong>只分析当前页事件附近的短录像，轨迹与越界/入侵规则匹配的结果会排在前面；“未检测到目标”只作为弱证据，不会删除 NVR 事件。</div>
+      : <div className="mb-4 rounded-xl border border-slate-200 bg-white/70 px-5 py-3 text-sm leading-6 text-slate-600"><strong>独立视觉验证未启用：</strong>{applicationStatus.data?.visual_analysis.message ?? "正在检查本地视觉分析组件。"}</div>}
     <Problem error={error ?? nvrs.error ?? presets.error ?? settings.error} />
 
     <form onSubmit={search} className={`${card} p-5 sm:p-7`}>
@@ -494,7 +531,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
               : results.counts[filter.id];
           return <button type="button" key={filter.id} onClick={() => void chooseReviewFilter(filter.id)} className={`rounded-full border px-3 py-2 text-xs font-semibold ${reviewFilter === filter.id ? "border-emerald-600 bg-emerald-700 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{filter.label} {count}</button>;
         })}</div></div>
-        {results.items.length === 0 ? <Empty title="当前二次筛选没有事件" description="请在时间轴上选择其他事件条或子时间区间，也可以清除事件时长筛选。" /> : groupedResults.map(([date, items]) => <div key={date} className="mb-7"><h3 className="mb-3 text-lg font-bold">{date}</h3><div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">{items.map((item) => <EventCard key={item.id} item={item} cameraName={cameraName(item.media_channel_id, item.media_channel_label || item.source_channel.label)} preview={previews[item.id]} animation={animations[item.id]} onHover={() => ensureAnimation(item)} onReview={(state) => changeReview(item, state)} onCandidate={() => createCandidate(item)} />)}</div></div>)}
+        {results.items.length === 0 ? <Empty title="当前二次筛选没有事件" description="请在时间轴上选择其他事件条或子时间区间，也可以清除事件时长筛选。" /> : groupedResults.map(([date, items]) => <div key={date} className="mb-7"><h3 className="mb-3 text-lg font-bold">{date}</h3><div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">{items.map((item) => <EventCard key={item.id} item={item} cameraName={cameraName(item.media_channel_id, item.media_channel_label || item.source_channel.label)} preview={previews[item.id]} animation={animations[item.id]} visualAnalysis={visualAnalyses[item.id] ?? item.visual_analysis ?? undefined} onHover={() => ensureAnimation(item)} onReview={(state) => changeReview(item, state)} onCandidate={() => createCandidate(item)} />)}</div></div>)}
       </>}
     </section>}
   </>;
@@ -515,18 +552,22 @@ function eventDuration(item: Bookmark) {
   return `${seconds.toLocaleString("zh-CN")} 秒`;
 }
 
-function EventCard({ item, cameraName, preview, animation, onHover, onReview, onCandidate }: {
+function EventCard({ item, cameraName, preview, animation, visualAnalysis, onHover, onReview, onCandidate }: {
   item: Bookmark;
   cameraName: string;
   preview?: EventPreview;
   animation?: EventAnimation;
+  visualAnalysis?: EventVisualAnalysis;
   onHover: () => void;
   onReview: (state: ReviewState) => void;
   onCandidate: () => void;
 }) {
   const [hovering, setHovering] = useState(false);
   const evidence = item.attributes.hikvision;
-  const image = hovering && animation?.status === "ready" ? animation : preview;
+  const evidenceImage = visualAnalysis?.evidence_content_url
+    ? { status: "ready", content_url: visualAnalysis.evidence_content_url, job_id: visualAnalysis.job_id, progress: 1 }
+    : animation;
+  const image = hovering && evidenceImage?.status === "ready" ? evidenceImage : preview;
   const review = item.review_state ?? "unreviewed";
   const reviewLabel = reviewPresentation(review);
   return <article className={`${card} overflow-hidden ${review === "candidate" ? "ring-2 ring-emerald-500" : review === "excluded" ? "opacity-70" : ""}`}>
@@ -536,6 +577,7 @@ function EventCard({ item, cameraName, preview, animation, onHover, onReview, on
       <span className="absolute bottom-3 right-3 rounded-md bg-black/65 px-2 py-1 font-mono text-xs text-white">{eventDuration(item)}</span>
     </div>
     <div className="p-5"><Badge>{eventPresentation(evidence?.canonical_event_type || item.event_type)}</Badge><h3 className="mt-3 font-bold">{cameraName}</h3><p className="mt-1 text-sm text-slate-600">NVR 事件时间 {formatDateTime(item.start_at)}</p><p className="mt-3 text-xs leading-5 text-slate-500">来源：NVR 历史事件日志。摄像机画面里的 OSD 水印由摄像机自身时钟生成，可能与 NVR 事件时间不同。</p>
+      {visualAnalysis && <VisualAnalysisSummary analysis={visualAnalysis} />}
       <div className="mt-4 grid grid-cols-2 gap-2">
         {review === "unreviewed" ? <Button onClick={() => onReview("reviewed")}>标为已看</Button> : <Button onClick={() => onReview("unreviewed")}>恢复未查看</Button>}
         {review === "excluded" ? <Button onClick={() => onReview("reviewed")}>移回结果</Button> : <Button variant="danger" onClick={() => onReview("excluded")}>排除</Button>}
@@ -543,6 +585,22 @@ function EventCard({ item, cameraName, preview, animation, onHover, onReview, on
       </div>
     </div>
   </article>;
+}
+
+function VisualAnalysisSummary({ analysis }: { analysis: EventVisualAnalysis }) {
+  if (["queued", "analyzing"].includes(analysis.status)) {
+    return <div className="mt-4 rounded-xl bg-slate-50 p-3"><p className="text-xs font-semibold text-slate-700">正在独立验证事件画面</p><div className="text-slate-700"><MediaProgress value={analysis.progress} /></div></div>;
+  }
+  if (analysis.status === "failed") {
+    return <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">视觉验证失败；该结果仍按 NVR 原始事件显示。</div>;
+  }
+  const presentation = {
+    confirmed_trigger: { label: "视觉轨迹匹配", tone: "positive" as const, explanation: "检测到目标轨迹穿越当前规则边界；该结果仍需结合实际画面判断。" },
+    target_present_no_trigger: { label: "疑似误报 · 有目标未触发", tone: "warning" as const, explanation: "画面中存在支持的目标，但轨迹没有匹配当前规则边界。" },
+    no_supported_target_detected: { label: "疑似误报 · 未检测到目标", tone: "warning" as const, explanation: "模型未检测到支持的目标；夜间、遮挡或小目标仍可能漏检。" },
+    uncertain: { label: "视觉结果无法判断", tone: "neutral" as const, explanation: "缺少规则坐标或当前画面不足以完成几何验证。" },
+  }[analysis.verdict ?? "uncertain"];
+  return <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3"><Badge tone={presentation.tone}>{presentation.label}</Badge><p className="mt-2 text-xs leading-5 text-slate-600">{presentation.explanation}</p>{analysis.result?.trigger_at && <p className="mt-1 text-xs text-slate-500">视觉触发时刻 {formatDateTime(analysis.result.trigger_at)}</p>}</div>;
 }
 
 function MediaProgress({ value }: { value: number }) {

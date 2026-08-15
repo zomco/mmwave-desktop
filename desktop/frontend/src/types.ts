@@ -87,6 +87,48 @@ export interface Job {
   result: Record<string, unknown> | null;
 }
 
+export interface VisualAnalysisAvailability {
+  available: boolean;
+  code: string | null;
+  message: string;
+  model_id: string | null;
+  supported_event_types: string[];
+  target_classes: string[];
+}
+
+export interface AppStatus {
+  application_version: string;
+  schema_version: number;
+  visual_analysis: VisualAnalysisAvailability;
+}
+
+export type VisualVerdict =
+  | "confirmed_trigger"
+  | "target_present_no_trigger"
+  | "no_supported_target_detected"
+  | "uncertain";
+
+export interface EventVisualAnalysis {
+  bookmark_id: string;
+  job_id: string;
+  status: "queued" | "analyzing" | "ready" | "failed";
+  progress: number;
+  verdict: VisualVerdict | null;
+  result: {
+    reason_code: string;
+    confidence: number | null;
+    trigger_at: string | null;
+    target_classes: string[];
+    track_count: number;
+    frame_count: number;
+    detection_count: number;
+    model_id: string;
+    analyzed_window: { start_at: string; end_at: string };
+    evidence_animation_ready: boolean;
+  } | null;
+  evidence_content_url: string | null;
+}
+
 export interface Bookmark {
   id: string;
   source: { id: string; kind: string; external_id: string };
@@ -116,6 +158,7 @@ export interface Bookmark {
   };
   review_state?: ReviewState;
   search_job_id?: string;
+  visual_analysis?: EventVisualAnalysis | null;
 }
 
 export type ReviewState = "unreviewed" | "reviewed" | "excluded" | "candidate";

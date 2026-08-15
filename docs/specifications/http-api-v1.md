@@ -99,6 +99,8 @@ GET  /api/v1/bookmarks/{bookmark_id}/preview/content
 GET  /api/v1/bookmarks/{bookmark_id}/animation
 POST /api/v1/bookmarks/{bookmark_id}/animation
 GET  /api/v1/bookmarks/{bookmark_id}/animation/content
+GET  /api/v1/bookmarks/{bookmark_id}/visual-analysis
+POST /api/v1/bookmarks/{bookmark_id}/visual-analysis
 ```
 
 Example search:
@@ -116,6 +118,8 @@ Example search:
 ```
 
 The effective target area is exactly one stable camera ID; the browser groups camera images by NVR and renders them as a radio choice, so there is no recorder or free-text area filter. `channel_ids` therefore contains exactly one item. `event_types` also contains exactly one of `motion`, `video_tamper`, `line_crossing` or `region_intrusion`. Continuous recording, catch-all Smart labels and multi-type requests are rejected. Presets persist one camera ID plus one event tag. Each job reads bounded historical alarm logs and pairs matching start/stop entries for the same camera and type, up to one hour. A paired event stores its real `event_duration_ms`; an unpaired event stores `null` with `duration_source: "unknown"`. `result.truncated` reports an adapter limit. Recording search is deferred until preview/clip generation. `search-jobs/{job_id}/results?limit=12&offset=0` returns a bounded page, total count and `has_more`, and only includes events produced by that search. JPEG preview creation is asynchronous and cached per event. Preview and animation status responses include normalized job `progress` from `0` to `1`; it is phase progress rather than an upstream byte counter. The animation route lazily creates a verified, bounded three-second animated WebP for hover playback. All files are written atomically under the derived-media root.
+
+Visual analysis is optional and currently accepts only `line_crossing` and `region_intrusion` bookmarks. POST is idempotent while an analysis is queued, running or ready. It resolves at most a 30-second context window, asks FFmpeg for fixed-size BGR frames, runs the configured local ONNX detector, tracks supported person/vehicle targets and compares their ground trajectories with the cached evidence-backed rule line/polygon. The cached response reports `confirmed_trigger`, `target_present_no_trigger`, `no_supported_target_detected` or `uncertain`, plus model identity, analyzed window, optional visual trigger time and phase progress. Negative evidence never mutates or deletes the NVR bookmark. A confirmed trigger may atomically replace the hover WebP with a short proof window centered on the reconstructed trigger.
 
 A Trace session persists one camera/event-type scope and accepts one bounded time iteration. Create a session with `{"channel_ids":["channel_01"],"event_types":["motion"]}`, then append a window with `{"from":"2026-08-12T18:00:00+08:00","to":"2026-08-13T06:00:00+08:00","label":"Time range"}`. Repeating that exact window is idempotent; a different second window returns `TRACE_SESSION_WINDOW_FIXED`, and the client must create a new search. The persisted job kind remains `recording_search` for schema compatibility, but its event source is the historical alarm log.
 

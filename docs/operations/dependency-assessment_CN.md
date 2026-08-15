@@ -17,6 +17,8 @@
 | PyInstaller | Windows one-folder 组装 | GPL-2.0-or-later + bootloader 例外 | 仅打包且固定版本；每次发布复核当时例外与声明 |
 | Inno Setup | 按用户 Windows 安装器 | 自定义再分发条款 | 外部构建工具，不 vendoring；发布前所有者必须复核当时商业再分发条款 |
 | FFmpeg / FFprobe | 在不使用 Python 视频解码的前提下 remux/转码/探测 NVR 媒体 | 固定 BtbN 构建：LGPL-3.0-or-later；禁用 GPL/nonfree；OpenH264 的专利姿态仍需独立审查 | 已固定版本/源码/归档/可执行文件/许可证哈希和可复现构建脚本提交；二进制保持在 Git 外；发布仍受完整静态依赖源码/声明镜像和硬件证据门禁 |
+| NumPy / ONNX Runtime（可选 vision extra） | 转换 FFmpeg 解码后的有界 BGR 张量，并执行本地事件推理 | BSD-3-Clause / MIT | 通过小型分析器接口保持可选和隔离；精确版本位于 `requirements-vision.lock.txt`；未安装时基础 Desktop 仍可运行。进入发布包前重新评估 Windows CPU/GPU provider |
+| YOLOX-Nano ONNX 权重（可选） | 作为事件窗口验证的首个行人/车辆检测器 | Apache-2.0 代码/模型来源；固定上游发布和许可证哈希 | 权重保持在 Git 外，由 `packaging/windows/fetch-vision-model.ps1` 获取；在昼夜真机准确率、延迟和再分发证据通过门禁前禁止随包分发 |
 
 海康 HTTP Digest、XML 解析、SQLite 和 Gateway TCP 采集使用 Python 标准库，避免新增协议/运行时依赖。不受信任 XML 若包含 DTD/实体声明会被拒绝，并受深度/大小限制。
 

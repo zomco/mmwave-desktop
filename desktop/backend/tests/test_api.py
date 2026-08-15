@@ -22,7 +22,7 @@ def test_status_reports_schema_and_media_without_paths(services) -> None:
     response = client(services).get("/api/v1/status")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 7
     assert payload["bind_host"] == "127.0.0.1"
     assert "data_dir" not in json.dumps(payload)
 
@@ -210,6 +210,43 @@ def test_device_discovery_event_audit_and_saved_area_filter(services, nvr) -> No
     assert preset.status_code == 201
     assert api.get("/api/v1/search-presets").json()[0]["area_name"] == "Front entrance"
     assert api.delete(f"/api/v1/search-presets/{preset.json()['id']}").status_code == 204
+
+
+def test_line_event_visual_analysis_is_cached_as_auxiliary_evidence(services, nvr) -> None:
+    api = client(services)
+    channel = api.post(f"/api/v1/nvrs/{nvr['id']}/sync-channels").json()[0]
+    audit = api.post(f"/api/v1/nvrs/{nvr['id']}/event-audit")
+    assert audit.status_code == 200
+    assert api.get("/api/v1/status").json()["visual_analysis"]["available"] is True
+
+    search = api.post(
+        "/api/v1/search-jobs",
+        json={
+            "nvr_id": nvr["id"],
+            "channel_ids": [channel["id"]],
+            "from": "2026-08-12T08:00:00Z",
+            "to": "2026-08-12T08:01:00Z",
+            "source_modes": ["historical_event_log"],
+            "event_types": ["line_crossing"],
+        },
+    )
+    assert search.status_code == 202
+    assert services.worker.process_once()
+    bookmark = api.get(f"/api/v1/search-jobs/{search.json()['id']}/results").json()["items"][0]
+    assert bookmark["visual_analysis"] is None
+
+    requested = api.post(f"/api/v1/bookmarks/{bookmark['id']}/visual-analysis")
+    assert requested.status_code == 202
+    assert requested.json()["status"] == "queued"
+    assert services.worker.process_once()
+
+    ready = api.get(f"/api/v1/bookmarks/{bookmark['id']}/visual-analysis").json()
+    assert ready["status"] == "ready"
+    assert ready["verdict"] == "confirmed_trigger"
+    assert ready["result"]["trigger_at"] == "2026-08-12T08:00:02.000Z"
+    assert ready["result"]["evidence_animation_ready"] is True
+    assert api.get(ready["evidence_content_url"]).content.startswith(b"RIFF")
+    assert api.get(f"/api/v1/bookmarks/{bookmark['id']}").json()["visual_analysis"]["verdict"] == "confirmed_trigger"
 
 
 def test_continuous_and_catch_all_smart_are_not_event_filters(services, nvr) -> None:

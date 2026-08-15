@@ -126,6 +126,7 @@ def create_app(
             "application_version": __version__,
             "schema_version": application_services.database.schema_version(),
             "ffmpeg": application_services.media_runner.availability(),
+            "visual_analysis": application_services.visual_analysis_availability(),
             "migration_state": "ready",
             "recovery_state": "ready",
             "bind_host": runtime_config.host,
@@ -357,6 +358,14 @@ def create_app(
     @app.get(api + "/bookmarks/{bookmark_id}/animation/content")
     def event_animation_content(bookmark_id: str) -> FileResponse:
         return FileResponse(application_services.event_animation_file(bookmark_id), media_type="image/webp")
+
+    @app.get(api + "/bookmarks/{bookmark_id}/visual-analysis")
+    def get_event_visual_analysis(bookmark_id: str) -> dict:
+        return application_services.get_event_visual_analysis(bookmark_id)
+
+    @app.post(api + "/bookmarks/{bookmark_id}/visual-analysis", status_code=202)
+    def create_event_visual_analysis(bookmark_id: str) -> dict:
+        return application_services.enqueue_event_visual_analysis(bookmark_id)
 
     @app.post(api + "/clips", status_code=202)
     def create_clip(request: ClipRequest) -> dict:

@@ -152,3 +152,33 @@ def test_animation_is_bounded_webp_and_atomic(tmp_path: Path) -> None:
     assert output.name == "animation_abc123.webp"
     assert commands[0][commands[0].index("-t") + 1] == "3"
     assert "libwebp_anim" in commands[0]
+
+
+def test_visual_sampling_is_ffmpeg_decoded_and_bounded(tmp_path: Path, monkeypatch) -> None:
+    runner = FFmpegRunner(Path("ffmpeg.exe"), Path("ffprobe.exe"), tmp_path)
+    captured: list[str] = []
+    frame = bytes(64 * 64 * 3)
+
+    class Completed:
+        returncode = 0
+        stdout = frame * 2
+
+    def run(command, **_kwargs):
+        captured.extend(command)
+        return Completed()
+
+    monkeypatch.setattr("tracecue_desktop.media.subprocess.run", run)
+    sampled = runner.sample_bgr_frames(
+        playback_locator="rtsp://192.0.2.10/recording",
+        username="operator",
+        password="password",
+        duration_seconds=2,
+        width=64,
+        height=64,
+        fps=1,
+    )
+
+    assert len(sampled.frames) == 2
+    assert captured[captured.index("-pix_fmt") + 1] == "bgr24"
+    assert captured[captured.index("-f") + 1] == "rawvideo"
+    assert "pipe:1" in captured

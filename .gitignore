@@ -27,6 +27,8 @@ clips/
 artifacts/
 release/output/
 packaging/windows/tools/
+packaging/windows/models/*.onnx
+packaging/windows/models/LICENSE.YOLOX
 *.msi
 *.msix
 

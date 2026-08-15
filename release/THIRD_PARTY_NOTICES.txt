@@ -15,6 +15,14 @@ Vitest - MIT License - https://github.com/vitest-dev/vitest
 PyInstaller - GPL-2.0-or-later with an exception permitting distribution of bundled applications - https://pyinstaller.org/
 Inno Setup - custom redistribution license; review current terms before release - https://jrsoftware.org/isinfo.php
 
+Optional local visual analysis (not part of the base package):
+NumPy - BSD-3-Clause License - https://github.com/numpy/numpy
+ONNX Runtime - MIT License - https://github.com/microsoft/onnxruntime
+YOLOX code and pinned YOLOX-Nano ONNX weight - Apache-2.0 License - https://github.com/Megvii-BaseDetection/YOLOX
+The model URL, binary hash and matching license-text hash are pinned in
+release/manifest.json. Model bundling remains blocked on cleared day/night
+accuracy, latency and redistribution evidence.
+
 FFmpeg and FFprobe - LGPL-3.0-or-later for the selected build - https://ffmpeg.org/
 Binary provider: BtbN/FFmpeg-Builds - MIT build scripts - https://github.com/BtbN/FFmpeg-Builds
 Pinned binary: n8.1.2-34-g9b6c8969e0-20260731, win64-lgpl-8.1, release
