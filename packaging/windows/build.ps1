@@ -6,7 +6,11 @@ param(
 $ErrorActionPreference = "Stop"
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $RepositoryRoot
-$BuildVenv = Join-Path $RepositoryRoot "build\verify-venv"
+$BuildVenv = if ($Mode -eq "Verify") {
+    Join-Path $RepositoryRoot ("build\verify-venv-" + [guid]::NewGuid().ToString("N"))
+} else {
+    Join-Path $RepositoryRoot "build\release-venv"
+}
 $BuildPython = Join-Path $BuildVenv "Scripts\python.exe"
 
 function Invoke-Checked {
@@ -74,6 +78,14 @@ Invoke-Checked "npm" @("run", "build", "--prefix", "desktop/frontend")
 
 if ($Mode -eq "Verify") {
     Write-Host "TraceCue Windows package source verification passed."
+    $ResolvedBuildRoot = [System.IO.Path]::GetFullPath((Join-Path $RepositoryRoot "build"))
+    $ResolvedBuildVenv = [System.IO.Path]::GetFullPath($BuildVenv)
+    if (-not $ResolvedBuildVenv.StartsWith($ResolvedBuildRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unsafe verification environment cleanup target: $ResolvedBuildVenv"
+    }
+    if (Test-Path -LiteralPath $ResolvedBuildVenv) {
+        Remove-Item -LiteralPath $ResolvedBuildVenv -Recurse -Force
+    }
     exit 0
 }
 

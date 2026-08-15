@@ -35,6 +35,46 @@ from .secrets import SecretStore, WindowsDpapiSecretStore
 from .sharing import LanClipShareServer
 
 
+CHANNEL_SNAPSHOT_TTL_MS = 10 * 60_000
+ACTIVITY_CLUSTER_GAP_MS = 30_000
+JOB_WORKER_COUNT = 2
+TRACE_ACTIVITY_CTES = f"""
+hits AS (
+    SELECT DISTINCT sr.interval_id
+    FROM trace_iterations ti
+    JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+    JOIN search_results sr ON sr.search_job_id=tij.job_id
+    WHERE ti.session_id=?
+),
+ordered_activity AS (
+    SELECT i.id, i.resolved_start_ms, i.resolved_end_ms,
+           MAX(i.resolved_end_ms) OVER (
+               ORDER BY i.resolved_start_ms, i.id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+           ) AS previous_max_end_ms
+    FROM hits JOIN intervals i ON i.id=hits.interval_id
+),
+marked_activity AS (
+    SELECT *, CASE
+        WHEN previous_max_end_ms IS NULL
+          OR resolved_start_ms > previous_max_end_ms + {ACTIVITY_CLUSTER_GAP_MS}
+        THEN 1 ELSE 0 END AS cluster_start
+    FROM ordered_activity
+),
+grouped_activity AS (
+    SELECT *, SUM(cluster_start) OVER (
+        ORDER BY resolved_start_ms, id ROWS UNBOUNDED PRECEDING
+    ) AS cluster_id
+    FROM marked_activity
+),
+activity_events AS (
+    SELECT id, resolved_start_ms, resolved_end_ms, cluster_id,
+           COUNT(*) OVER (PARTITION BY cluster_id) AS cluster_size
+    FROM grouped_activity
+)
+"""
+
+
 def now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -457,12 +497,26 @@ class DesktopServices:
         self._channel_row(channel_id)
         timestamp = now_ms()
         existing = self.database.one("SELECT * FROM channel_snapshots WHERE channel_id=?", (channel_id,))
-        if existing and existing["status"] in {"queued", "generating"}:
+        usable_cache = bool(
+            existing
+            and existing["relative_path"]
+            and self._derived_path_exists(existing["relative_path"])
+        )
+        active_refresh = bool(
+            existing
+            and existing["job_id"]
+            and (
+                job := self.database.one(
+                    "SELECT state FROM jobs WHERE id=?", (existing["job_id"],)
+                )
+            )
+            and job["state"] in {"queued", "running"}
+        )
+        if active_refresh:
             return self._public_channel_snapshot(existing)
         if (
-            existing and existing["status"] == "ready"
+            existing and usable_cache
             and int(existing["expires_ms"] or 0) > timestamp
-            and self._derived_path_exists(existing["relative_path"])
         ):
             return self._public_channel_snapshot(existing)
         job_id = new_id("job")
@@ -478,11 +532,12 @@ class DesktopServices:
                 INSERT INTO channel_snapshots(
                     channel_id, job_id, status, relative_path, captured_ms, expires_ms,
                     created_ms, updated_ms
-                ) VALUES (?, ?, 'queued', NULL, NULL, NULL, ?, ?)
+                ) VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?)
                 ON CONFLICT(channel_id) DO UPDATE SET job_id=excluded.job_id,
-                    status='queued', updated_ms=excluded.updated_ms
+                    status=excluded.status,
+                    updated_ms=excluded.updated_ms
                 """,
-                (channel_id, job_id, timestamp, timestamp),
+                (channel_id, job_id, "ready" if usable_cache else "queued", timestamp, timestamp),
             )
         return self.get_channel_snapshot(channel_id)
 
@@ -495,7 +550,7 @@ class DesktopServices:
 
     def channel_snapshot_file(self, channel_id: str) -> Path:
         row = self.database.one("SELECT * FROM channel_snapshots WHERE channel_id=?", (channel_id,))
-        if not row or row["status"] != "ready" or not row["relative_path"]:
+        if not row or not row["relative_path"]:
             raise AppError("MEDIA_SNAPSHOT_NOT_READY", "Camera snapshot is not ready.", 409)
         path = (self.config.clip_dir / row["relative_path"]).resolve()
         if not path.is_relative_to(self.config.clip_dir.resolve()) or not path.is_file():
@@ -726,6 +781,9 @@ class DesktopServices:
         from_at: str | None = None,
         to_at: str | None = None,
         duration_class: str | None = None,
+        min_duration_ms: int | None = None,
+        max_duration_ms: int | None = None,
+        activity_mode: str = "all",
         summary_only: bool = False,
     ) -> dict[str, Any]:
         self._trace_session_row(session_id)
@@ -737,6 +795,22 @@ class DesktopServices:
         duration_classes = {"unknown", "under_5s", "5_to_30s", "over_30s"}
         if duration_class is not None and duration_class not in duration_classes:
             raise AppError("TRACE_DURATION_FILTER_INVALID", "Event-duration filter is invalid.", 422)
+        if activity_mode not in {"all", "isolated", "clustered"}:
+            raise AppError("TRACE_ACTIVITY_FILTER_INVALID", "Event-activity filter is invalid.", 422)
+        if min_duration_ms is not None and not 0 <= min_duration_ms <= 86_400_000:
+            raise AppError("TRACE_DURATION_FILTER_INVALID", "Minimum event duration is invalid.", 422)
+        if max_duration_ms is not None and not 0 <= max_duration_ms <= 86_400_000:
+            raise AppError("TRACE_DURATION_FILTER_INVALID", "Maximum event duration is invalid.", 422)
+        if (
+            min_duration_ms is not None
+            and max_duration_ms is not None
+            and max_duration_ms < min_duration_ms
+        ):
+            raise AppError(
+                "TRACE_DURATION_FILTER_INVALID",
+                "Maximum event duration must not be shorter than the minimum.",
+                422,
+            )
 
         review_filters: list[str] = []
         review_parameters: list[Any] = []
@@ -766,6 +840,7 @@ class DesktopServices:
             "CAST(json_extract(i.attributes_json, '$.hikvision.event_duration_ms') AS INTEGER)"
         )
         duration_filters: list[str] = []
+        duration_parameters: list[Any] = []
         if duration_class == "unknown":
             duration_filters.append(f"{duration_expression} IS NULL")
         elif duration_class == "under_5s":
@@ -774,11 +849,26 @@ class DesktopServices:
             duration_filters.append(f"{duration_expression} >= 5000 AND {duration_expression} <= 30000")
         elif duration_class == "over_30s":
             duration_filters.append(f"{duration_expression} > 30000")
+        if min_duration_ms is not None:
+            duration_filters.append(f"{duration_expression} >= ?")
+            duration_parameters.append(min_duration_ms)
+        if max_duration_ms is not None:
+            duration_filters.append(f"{duration_expression} <= ?")
+            duration_parameters.append(max_duration_ms)
 
-        result_filters = [*review_filters, *time_filters, *duration_filters]
-        result_parameters = [*review_parameters, *time_parameters]
+        activity_filters: list[str] = []
+        if activity_mode == "isolated":
+            activity_filters.append("ae.cluster_size = 1")
+        elif activity_mode == "clustered":
+            activity_filters.append("ae.cluster_size > 1")
+
+        result_filters = [*review_filters, *time_filters, *activity_filters, *duration_filters]
+        result_parameters = [*review_parameters, *time_parameters, *duration_parameters]
         result_filter_clause = " AND " + " AND ".join(result_filters) if result_filters else ""
         time_filter_clause = " AND " + " AND ".join(time_filters) if time_filters else ""
+        activity_filter_clause = (
+            " AND " + " AND ".join(activity_filters) if activity_filters else ""
+        )
 
         rows: list[dict[str, Any]] = []
         if not summary_only:
@@ -796,7 +886,7 @@ class DesktopServices:
                     WHERE ti.session_id=?
                 ), latest_hits AS (
                     SELECT interval_id, job_id FROM ranked_hits WHERE hit_rank=1
-                )
+                ), {TRACE_ACTIVITY_CTES}
                 SELECT i.*, sc.label AS source_channel_label, sc.kind AS source_channel_kind,
                        s.kind AS source_kind, s.external_source_id,
                        COALESCE(nc.alias, nc.device_name) AS media_channel_label,
@@ -804,6 +894,7 @@ class DesktopServices:
                        COALESCE(r.state, 'unreviewed') AS trace_review_state
                 FROM latest_hits
                 JOIN intervals i ON i.id=latest_hits.interval_id
+                JOIN activity_events ae ON ae.id=i.id
                 JOIN source_channels sc ON sc.id=i.source_channel_id
                 JOIN sources s ON s.id=i.source_id
                 LEFT JOIN nvr_channels nc ON nc.id=i.nvr_channel_id
@@ -813,7 +904,14 @@ class DesktopServices:
                 ORDER BY i.resolved_start_ms DESC, i.id DESC
                 LIMIT ? OFFSET ?
                 """,
-                (session_id, session_id, *result_parameters, limit, offset),
+                (
+                    session_id,
+                    session_id,
+                    session_id,
+                    *result_parameters,
+                    limit,
+                    offset,
+                ),
             )
 
         counts = {state: 0 for state in ("unreviewed", "reviewed", "excluded", "candidate")}
@@ -837,17 +935,14 @@ class DesktopServices:
             counts[row["state"]] = int(row["count"])
 
         timeline_rows = self.database.all(
-            """
-            WITH hits AS (
-                SELECT DISTINCT sr.interval_id
-                FROM trace_iterations ti
-                JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
-                JOIN search_results sr ON sr.search_job_id=tij.job_id
-                WHERE ti.session_id=?
-            )
+            f"""
+            WITH {TRACE_ACTIVITY_CTES}
             SELECT i.id, i.resolved_start_ms, i.resolved_end_ms,
-                   CAST(json_extract(i.attributes_json, '$.hikvision.event_duration_ms') AS INTEGER) AS duration_ms
-            FROM hits JOIN intervals i ON i.id=hits.interval_id
+                   CAST(json_extract(i.attributes_json, '$.hikvision.event_duration_ms') AS INTEGER) AS duration_ms,
+                   ae.cluster_size
+            FROM hits
+            JOIN intervals i ON i.id=hits.interval_id
+            JOIN activity_events ae ON ae.id=i.id
             ORDER BY i.resolved_start_ms, i.id
             LIMIT 2001
             """,
@@ -860,6 +955,7 @@ class DesktopServices:
                 "start_at": rfc3339(int(row["resolved_start_ms"])),
                 "end_at": rfc3339(int(row["resolved_end_ms"])),
                 "duration_ms": int(row["duration_ms"]) if row["duration_ms"] is not None else None,
+                "cluster_size": int(row["cluster_size"]),
             }
             for row in timeline_rows[:2_000]
         ]
@@ -867,16 +963,12 @@ class DesktopServices:
         duration_buckets = {key: 0 for key in ("unknown", "under_5s", "5_to_30s", "over_30s")}
         for row in self.database.all(
             f"""
-            WITH hits AS (
-                SELECT DISTINCT sr.interval_id
-                FROM trace_iterations ti
-                JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
-                JOIN search_results sr ON sr.search_job_id=tij.job_id
-                WHERE ti.session_id=?
-            )
+            WITH {TRACE_ACTIVITY_CTES}
             SELECT {duration_expression} AS duration_ms
-            FROM hits JOIN intervals i ON i.id=hits.interval_id
-            WHERE 1=1 {time_filter_clause}
+            FROM hits
+            JOIN intervals i ON i.id=hits.interval_id
+            JOIN activity_events ae ON ae.id=i.id
+            WHERE 1=1 {time_filter_clause} {activity_filter_clause}
             """,
             (session_id, *time_parameters),
         ):
@@ -889,6 +981,47 @@ class DesktopServices:
                 duration_buckets["5_to_30s"] += 1
             else:
                 duration_buckets["over_30s"] += 1
+
+        activity_counts = {"isolated": 0, "clustered": 0}
+        for row in self.database.all(
+            f"""
+            WITH {TRACE_ACTIVITY_CTES}
+            SELECT CASE WHEN ae.cluster_size > 1 THEN 'clustered' ELSE 'isolated' END AS mode,
+                   COUNT(*) AS count
+            FROM hits
+            JOIN intervals i ON i.id=hits.interval_id
+            JOIN activity_events ae ON ae.id=i.id
+            WHERE 1=1 {time_filter_clause}
+            GROUP BY CASE WHEN ae.cluster_size > 1 THEN 'clustered' ELSE 'isolated' END
+            """,
+            (session_id, *time_parameters),
+        ):
+            activity_counts[row["mode"]] = int(row["count"])
+
+        duration_range_row = self.database.one(
+            f"""
+            WITH {TRACE_ACTIVITY_CTES}
+            SELECT COUNT({duration_expression}) AS known_count,
+                   MIN({duration_expression}) AS min_ms,
+                   MAX({duration_expression}) AS max_ms
+            FROM hits
+            JOIN intervals i ON i.id=hits.interval_id
+            JOIN activity_events ae ON ae.id=i.id
+            WHERE 1=1 {time_filter_clause} {activity_filter_clause}
+            """,
+            (session_id, *time_parameters),
+        ) or {"known_count": 0, "min_ms": None, "max_ms": None}
+        duration_range = {
+            "known_count": int(duration_range_row["known_count"] or 0),
+            "min_ms": (
+                int(duration_range_row["min_ms"])
+                if duration_range_row["min_ms"] is not None else None
+            ),
+            "max_ms": (
+                int(duration_range_row["max_ms"])
+                if duration_range_row["max_ms"] is not None else None
+            ),
+        }
         items: list[dict[str, Any]] = []
         for row in rows:
             item = self._public_interval(row)
@@ -897,15 +1030,11 @@ class DesktopServices:
             items.append(item)
         filtered = self.database.one(
             f"""
-            WITH hits AS (
-                SELECT DISTINCT sr.interval_id
-                FROM trace_iterations ti
-                JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
-                JOIN search_results sr ON sr.search_job_id=tij.job_id
-                WHERE ti.session_id=?
-            )
+            WITH {TRACE_ACTIVITY_CTES}
             SELECT COUNT(*) AS total
-            FROM hits JOIN intervals i ON i.id=hits.interval_id
+            FROM hits
+            JOIN intervals i ON i.id=hits.interval_id
+            JOIN activity_events ae ON ae.id=i.id
             LEFT JOIN trace_event_reviews r
               ON r.session_id=? AND r.interval_id=i.id
             WHERE 1=1 {result_filter_clause}
@@ -922,6 +1051,10 @@ class DesktopServices:
             "timeline_truncated": timeline_truncated,
             "selected_window": selected_window,
             "duration_buckets": duration_buckets,
+            "duration_range": duration_range,
+            "activity_mode": activity_mode,
+            "activity_counts": activity_counts,
+            "activity_cluster_gap_ms": ACTIVITY_CLUSTER_GAP_MS,
             "limit": limit,
             "offset": offset,
             "has_more": not summary_only and offset + len(items) < filtered_total,
@@ -1957,10 +2090,15 @@ class DesktopServices:
         return {"interval_id": payload["interval_id"]}
 
     def _run_channel_snapshot(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        self.database.execute(
-            "UPDATE channel_snapshots SET status='generating', updated_ms=? WHERE channel_id=?",
-            (now_ms(), payload["channel_id"]),
+        cached = self.database.one(
+            "SELECT relative_path FROM channel_snapshots WHERE channel_id=?",
+            (payload["channel_id"],),
         )
+        if not cached or not self._derived_path_exists(cached["relative_path"]):
+            self.database.execute(
+                "UPDATE channel_snapshots SET status='generating', updated_ms=? WHERE channel_id=?",
+                (now_ms(), payload["channel_id"]),
+            )
         channel = self._channel_row(payload["channel_id"])
         nvr = self._nvr_row(channel["nvr_id"])
         tracks = json.loads(channel["metadata_json"]).get("stream_track_ids") or []
@@ -1970,6 +2108,7 @@ class DesktopServices:
         username, password = self.secret_store.get(nvr["secret_ref"])
         last_error: MediaError | None = None
         path = None
+        snapshot_source = "live_low_rate"
         for live_path in (f"/Streaming/Channels/{track_id}", f"/ISAPI/Streaming/channels/{track_id}"):
             live_locator = urlunsplit(("rtsp", f"{nvr['host']}:554", live_path, "", ""))
             try:
@@ -1984,6 +2123,7 @@ class DesktopServices:
             except MediaError as exc:
                 last_error = exc
         if path is None:
+            snapshot_source = "recent_recording"
             end_ms = now_ms()
             query = RecordingQuery(
                 channel["external_channel_id"], channel["primary_track_id"],
@@ -2015,9 +2155,15 @@ class DesktopServices:
             UPDATE channel_snapshots SET status='ready', relative_path=?, captured_ms=?,
                 expires_ms=?, updated_ms=? WHERE channel_id=?
             """,
-            (relative_path, captured, captured + 30_000, captured, payload["channel_id"]),
+            (
+                relative_path,
+                captured,
+                captured + CHANNEL_SNAPSHOT_TTL_MS,
+                captured,
+                payload["channel_id"],
+            ),
         )
-        return {"channel_id": payload["channel_id"]}
+        return {"channel_id": payload["channel_id"], "source": snapshot_source}
 
     def _run_clip(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._set_job_progress(job_id, 0.08)
@@ -2419,17 +2565,31 @@ class DesktopServices:
             ),
         }
 
-    @staticmethod
-    def _public_channel_snapshot(row: dict[str, Any]) -> dict[str, Any]:
+    def _public_channel_snapshot(self, row: dict[str, Any]) -> dict[str, Any]:
+        cache_ready = bool(
+            row["relative_path"] and self._derived_path_exists(row["relative_path"])
+        )
+        job = (
+            self.database.one("SELECT state, result_json FROM jobs WHERE id=?", (row["job_id"],))
+            if row["job_id"] else None
+        )
+        refreshing = bool(job and job["state"] in {"queued", "running"})
+        effective_status = "ready" if cache_ready else row["status"]
         return {
             "channel_id": row["channel_id"],
             "job_id": row["job_id"],
-            "status": row["status"],
+            "status": effective_status,
             "captured_at": rfc3339(row["captured_ms"]),
             "expires_at": rfc3339(row["expires_ms"]),
+            "stale": bool(cache_ready and int(row["expires_ms"] or 0) <= now_ms()),
+            "refreshing": refreshing,
+            "source": (
+                json.loads(job["result_json"]).get("source")
+                if job and job["result_json"] else None
+            ),
             "content_url": (
                 f"/api/v1/channels/{row['channel_id']}/snapshot/content"
-                if row["status"] == "ready" else None
+                if cache_ready else None
             ),
         }
 
@@ -2460,19 +2620,29 @@ class JobWorker:
     def __init__(self, services: DesktopServices):
         self.services = services
         self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+        self._threads: list[threading.Thread] = []
 
     def start(self) -> None:
-        if self._thread and self._thread.is_alive():
+        if any(thread.is_alive() for thread in self._threads):
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="tracecue-jobs", daemon=True)
-        self._thread.start()
+        self._threads = [
+            threading.Thread(
+                target=self._loop,
+                name=f"tracecue-jobs-{index + 1}",
+                daemon=True,
+            )
+            for index in range(JOB_WORKER_COUNT)
+        ]
+        for thread in self._threads:
+            thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
-        if self._thread:
-            self._thread.join(timeout=timeout)
+        deadline = time.monotonic() + timeout
+        for thread in self._threads:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        self._threads = []
 
     def process_once(self) -> bool:
         job = self._claim()
@@ -2501,11 +2671,7 @@ class JobWorker:
                     (now_ms(), payload["interval_id"]),
                 )
             if job["kind"] == "channel_snapshot":
-                payload = json.loads(job["payload_json"])
-                self.services.database.execute(
-                    "UPDATE channel_snapshots SET status='failed', updated_ms=? WHERE channel_id=?",
-                    (now_ms(), payload["channel_id"]),
-                )
+                self._mark_snapshot_failed(job)
         except BaseException:
             self._finish(
                 job["id"],
@@ -2530,11 +2696,7 @@ class JobWorker:
                     (now_ms(), payload["interval_id"]),
                 )
             if job["kind"] == "channel_snapshot":
-                payload = json.loads(job["payload_json"])
-                self.services.database.execute(
-                    "UPDATE channel_snapshots SET status='failed', updated_ms=? WHERE channel_id=?",
-                    (now_ms(), payload["channel_id"]),
-                )
+                self._mark_snapshot_failed(job)
         else:
             self._finish(job["id"], "succeeded", result=result)
         return True
@@ -2548,7 +2710,13 @@ class JobWorker:
         timestamp = now_ms()
         with self.services.database.transaction() as db:
             row = db.execute(
-                "SELECT * FROM jobs WHERE state='queued' AND cancel_requested=0 ORDER BY created_ms LIMIT 1"
+                """
+                SELECT * FROM jobs
+                WHERE state='queued' AND cancel_requested=0
+                ORDER BY CASE WHEN kind='channel_snapshot' THEN 1 ELSE 0 END,
+                         created_ms, id
+                LIMIT 1
+                """
             ).fetchone()
             if not row:
                 return None
@@ -2560,6 +2728,23 @@ class JobWorker:
                 (timestamp, timestamp, row["id"]),
             )
             return dict(row)
+
+    def _mark_snapshot_failed(self, job: dict[str, Any]) -> None:
+        payload = json.loads(job["payload_json"])
+        row = self.services.database.one(
+            "SELECT relative_path FROM channel_snapshots WHERE channel_id=?",
+            (payload["channel_id"],),
+        )
+        if row and self.services._derived_path_exists(row["relative_path"]):
+            self.services.database.execute(
+                "UPDATE channel_snapshots SET status='ready', updated_ms=? WHERE channel_id=?",
+                (now_ms(), payload["channel_id"]),
+            )
+            return
+        self.services.database.execute(
+            "UPDATE channel_snapshots SET status='failed', updated_ms=? WHERE channel_id=?",
+            (now_ms(), payload["channel_id"]),
+        )
 
     def _finish(
         self,

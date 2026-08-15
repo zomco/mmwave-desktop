@@ -148,9 +148,11 @@ export interface TraceTimelineEvent {
   start_at: string;
   end_at: string;
   duration_ms: number | null;
+  cluster_size: number;
 }
 
 export type DurationClass = "unknown" | "under_5s" | "5_to_30s" | "over_30s";
+export type ActivityMode = "all" | "isolated" | "clustered";
 
 export interface TraceSessionResults {
   session_id: string;
@@ -161,6 +163,10 @@ export interface TraceSessionResults {
   timeline_truncated: boolean;
   selected_window: { start_at: string; end_at: string } | null;
   duration_buckets: Record<DurationClass, number>;
+  duration_range: { known_count: number; min_ms: number | null; max_ms: number | null };
+  activity_mode: ActivityMode;
+  activity_counts: Record<Exclude<ActivityMode, "all">, number>;
+  activity_cluster_gap_ms: number;
   limit: number;
   offset: number;
   has_more: boolean;
@@ -212,6 +218,9 @@ export interface ChannelSnapshot {
   status: "queued" | "generating" | "ready" | "failed";
   captured_at: string | null;
   expires_at: string | null;
+  stale: boolean;
+  refreshing: boolean;
+  source: "live_low_rate" | "recent_recording" | null;
   content_url: string | null;
 }
 

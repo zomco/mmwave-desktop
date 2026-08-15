@@ -295,6 +295,9 @@ def create_app(
         duration_class: str | None = Query(
             default=None, pattern="^(unknown|under_5s|5_to_30s|over_30s)$"
         ),
+        min_duration_ms: int | None = Query(default=None, ge=0, le=86_400_000),
+        max_duration_ms: int | None = Query(default=None, ge=0, le=86_400_000),
+        activity_mode: str = Query(default="all", pattern="^(all|isolated|clustered)$"),
         summary_only: bool = Query(default=False),
     ) -> dict:
         return application_services.trace_session_results(
@@ -305,6 +308,9 @@ def create_app(
             from_at=from_at,
             to_at=to_at,
             duration_class=duration_class,
+            min_duration_ms=min_duration_ms,
+            max_duration_ms=max_duration_ms,
+            activity_mode=activity_mode,
             summary_only=summary_only,
         )
 

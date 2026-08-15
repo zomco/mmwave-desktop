@@ -7,11 +7,11 @@
 ```text
 Event search
 ├─ Required exact time, one visual camera and exactly one behavior type
-├─ NVR-grouped camera snapshots refreshed once on page entry as a single-choice target-area selector
+├─ NVR-grouped, single-choice camera snapshots: visible cards first, selected card prioritized, stale cache kept while refreshing
 ├─ Selected camera overlays the selected event type's evidenced rule boundary
 ├─ Saved filters
-├─ Summary-only first pass with a single-track zoomable event-span timeline and duration facets
-├─ Click an event span or drag a sub-window; duration facets recompute for that window
+├─ Summary-only first pass with a single-track zoomable event-span timeline, duration and activity-pattern facets
+├─ Click an event span or drag a sub-window; exact duration and isolated/clustered facets recompute for that window
 ├─ Paged preview gallery only after a secondary timeline/all-events choice
 ├─ Hover motion and durable reviewed/excluded state
 └─ Generate candidate clip

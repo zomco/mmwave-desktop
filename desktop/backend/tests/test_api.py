@@ -35,6 +35,27 @@ def test_rejects_cross_origin_browser_request(services) -> None:
     assert response.json()["error"]["code"] == "REQUEST_ORIGIN_REJECTED"
 
 
+def test_event_work_yields_before_queued_camera_refreshes(services, nvr) -> None:
+    api = client(services)
+    channel = api.get(f"/api/v1/nvrs/{nvr['id']}/channels").json()[0]
+    snapshot_job = api.post(f"/api/v1/channels/{channel['id']}/snapshot").json()["job_id"]
+    search_job = api.post(
+        "/api/v1/search-jobs",
+        json={
+            "nvr_id": nvr["id"],
+            "channel_ids": [channel["id"]],
+            "from": "2026-08-12T08:00:00Z",
+            "to": "2026-08-12T08:01:00Z",
+            "source_modes": ["record_classification"],
+            "event_types": ["motion"],
+        },
+    ).json()["id"]
+
+    assert services.worker.process_once()
+    assert api.get(f"/api/v1/jobs/{search_job}").json()["state"] == "succeeded"
+    assert api.get(f"/api/v1/jobs/{snapshot_job}").json()["state"] == "queued"
+
+
 def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     api = client(services)
     channels = api.get(f"/api/v1/nvrs/{nvr['id']}/channels").json()
@@ -53,7 +74,25 @@ def test_nvr_search_clip_and_bounded_range_workflow(services, nvr) -> None:
     assert services.worker.process_once()
     ready_snapshot = api.get(f"/api/v1/channels/{channels[0]['id']}/snapshot").json()
     assert ready_snapshot["status"] == "ready"
+    assert ready_snapshot["stale"] is False
+    assert ready_snapshot["refreshing"] is False
     assert api.get(ready_snapshot["content_url"]).content.startswith(b"\xff\xd8\xff")
+
+    services.database.execute(
+        "UPDATE channel_snapshots SET expires_ms=0 WHERE channel_id=?",
+        (channels[0]["id"],),
+    )
+    stale_snapshot = api.post(f"/api/v1/channels/{channels[0]['id']}/snapshot").json()
+    assert stale_snapshot["status"] == "ready"
+    assert stale_snapshot["stale"] is True
+    assert stale_snapshot["refreshing"] is True
+    assert api.get(stale_snapshot["content_url"]).content.startswith(b"\xff\xd8\xff")
+    assert services.worker.process_once()
+    refreshed_snapshot = api.get(f"/api/v1/channels/{channels[0]['id']}/snapshot").json()
+    assert refreshed_snapshot["status"] == "ready"
+    assert refreshed_snapshot["stale"] is False
+    assert refreshed_snapshot["refreshing"] is False
+    assert refreshed_snapshot["source"] == "live_low_rate"
 
     search = api.post(
         "/api/v1/search-jobs",
@@ -245,7 +284,10 @@ def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews
     assert summary["timeline"][0]["start_at"] == "2026-08-12T08:00:00.000Z"
     assert summary["timeline"][0]["end_at"] == "2026-08-12T08:00:09.000Z"
     assert summary["timeline"][0]["duration_ms"] == 9000
+    assert summary["timeline"][0]["cluster_size"] == 1
     assert summary["timeline_truncated"] is False
+    assert summary["activity_counts"] == {"isolated": 1, "clustered": 0}
+    assert summary["duration_range"] == {"known_count": 1, "min_ms": 9000, "max_ms": 9000}
 
     results = api.get(
         f"/api/v1/trace-sessions/{session_id}/results?duration_class=5_to_30s"
@@ -258,6 +300,12 @@ def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews
     assert api.get(
         f"/api/v1/trace-sessions/{session_id}/results?duration_class=unknown"
     ).json()["total"] == 0
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results?min_duration_ms=10000"
+    ).json()["total"] == 0
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results?activity_mode=isolated"
+    ).json()["total"] == 1
     bookmark_id = results["items"][0]["id"]
 
     focused = api.get(
@@ -279,6 +327,10 @@ def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews
         f"/api/v1/trace-sessions/{session_id}/results",
         params={"from": "2026-08-12T08:00:00Z"},
     ).status_code == 422
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results",
+        params={"min_duration_ms": 10_000, "max_duration_ms": 5_000},
+    ).status_code == 422
 
     reviewed = api.patch(
         f"/api/v1/trace-sessions/{session_id}/events/{bookmark_id}",
@@ -295,6 +347,78 @@ def test_trace_session_uses_one_window_then_exposes_secondary_facets_and_reviews
 
     assert api.delete(f"/api/v1/trace-sessions/{session_id}").status_code == 204
     assert api.get(f"/api/v1/trace-sessions/{session_id}").status_code == 404
+
+
+def test_trace_secondary_activity_clusters_and_exact_duration_bounds(services, nvr) -> None:
+    api = client(services)
+    channel = api.get(f"/api/v1/nvrs/{nvr['id']}/channels").json()[0]
+    session_id = api.post(
+        "/api/v1/trace-sessions",
+        json={"channel_ids": [channel["id"]], "event_types": ["motion"]},
+    ).json()["id"]
+    api.post(
+        f"/api/v1/trace-sessions/{session_id}/iterations",
+        json={
+            "from": "2026-08-12T08:00:00Z",
+            "to": "2026-08-12T08:01:00Z",
+            "label": "活动模式夹具",
+        },
+    )
+    assert services.worker.process_once()
+
+    original = services.database.one("SELECT * FROM intervals LIMIT 1")
+    assert original is not None
+    job_id = services.database.one(
+        """
+        SELECT tij.job_id FROM trace_iterations ti
+        JOIN trace_iteration_jobs tij ON tij.iteration_id=ti.id
+        WHERE ti.session_id=?
+        """,
+        (session_id,),
+    )["job_id"]
+    columns = list(original)
+    for suffix, start_offset, end_offset in (("cluster", 15_000, 20_000), ("isolated", 55_000, 59_000)):
+        values = dict(original)
+        values["id"] = f"bookmark_{suffix}"
+        values["source_event_id"] = f"fixture-event-{suffix}"
+        for name in ("raw_start_ms", "resolved_start_ms"):
+            values[name] = int(original[name]) + start_offset
+        for name in ("raw_end_ms", "resolved_end_ms"):
+            values[name] = int(original["raw_start_ms"]) + end_offset
+        if original["media_start_ms"] is not None:
+            values["media_start_ms"] = int(original["raw_start_ms"]) + start_offset
+            values["media_end_ms"] = int(original["raw_start_ms"]) + end_offset
+        attributes = json.loads(original["attributes_json"])
+        attributes["hikvision"]["event_duration_ms"] = end_offset - start_offset
+        values["attributes_json"] = json.dumps(attributes)
+        services.database.execute(
+            f"INSERT INTO intervals({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+            tuple(values[column] for column in columns),
+        )
+        services.database.execute(
+            "INSERT INTO search_results(search_job_id, interval_id) VALUES (?, ?)",
+            (job_id, values["id"]),
+        )
+
+    summary = api.get(
+        f"/api/v1/trace-sessions/{session_id}/results?summary_only=true"
+    ).json()
+    assert summary["activity_cluster_gap_ms"] == 30_000
+    assert summary["activity_counts"] == {"isolated": 1, "clustered": 2}
+    assert [item["cluster_size"] for item in summary["timeline"]] == [2, 2, 1]
+    assert summary["duration_range"] == {"known_count": 3, "min_ms": 4000, "max_ms": 9000}
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results?activity_mode=clustered"
+    ).json()["total"] == 2
+    assert api.get(
+        f"/api/v1/trace-sessions/{session_id}/results?activity_mode=isolated"
+    ).json()["total"] == 1
+    exact = api.get(
+        f"/api/v1/trace-sessions/{session_id}/results",
+        params={"min_duration_ms": 6_000, "max_duration_ms": 10_000},
+    ).json()
+    assert exact["total"] == 1
+    assert exact["items"][0]["attributes"]["hikvision"]["event_duration_ms"] == 9000
 
 
 def test_candidate_padding_stops_at_adjacent_event_midpoints_without_trimming_event_bodies() -> None:

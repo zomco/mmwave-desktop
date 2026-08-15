@@ -36,7 +36,7 @@ desktop backend: python -m pytest desktop/backend/tests
 desktop frontend: npm ci --prefix desktop/frontend && npm test --prefix desktop/frontend && npm run build --prefix desktop/frontend
 ```
 
-`packaging/windows/build.ps1 -Mode Verify` runs all software checks on Windows. `-Mode Release` is intentionally blocked unless licensing, FFmpeg hashes/notices and signing inputs are explicitly satisfied.
+`packaging/windows/build.ps1 -Mode Verify` runs all software checks on Windows. Each invocation uses and then removes a unique repository-local verification virtual environment, so a running test build cannot lock the next verifier's console entry point. `-Mode Release` is intentionally blocked unless licensing, FFmpeg hashes/notices and signing inputs are explicitly satisfied.
 
 The Windows verification script gives pytest a unique base directory under repository-local `build/`. This avoids `WinError 5` when `%TEMP%\pytest-of-<user>` was created by an elevated process, IDE sandbox or another Windows identity. For a direct local pytest invocation, use the same pattern:
 

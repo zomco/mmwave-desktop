@@ -14,6 +14,7 @@ import {
 } from "../lib";
 import type { View, NoticeSetter } from "../App";
 import type {
+  ActivityMode,
   AppSettings,
   Bookmark,
   Channel,
@@ -45,6 +46,8 @@ const durationOptions: { id: DurationClass; label: string }[] = [
   { id: "over_30s", label: "长于 30 秒" },
   { id: "unknown", label: "时长未知" },
 ];
+type DurationBounds = { min_ms: number | null; max_ms: number | null };
+const emptyDurationBounds: DurationBounds = { min_ms: null, max_ms: null };
 
 function inputWindow(from: string, to: string): TimeWindow {
   return { from: new Date(from), to: new Date(to) };
@@ -76,6 +79,9 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   const [page, setPage] = useState(0);
   const [focusWindow, setFocusWindow] = useState<TimelineWindow | null>(null);
   const [durationClass, setDurationClass] = useState<DurationClass | null>(null);
+  const [durationBounds, setDurationBounds] = useState<DurationBounds>(emptyDurationBounds);
+  const [durationDraft, setDurationDraft] = useState({ min: "", max: "" });
+  const [activityMode, setActivityMode] = useState<ActivityMode>("all");
   const [secondaryActive, setSecondaryActive] = useState(false);
   const [timeTouched, setTimeTouched] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -157,6 +163,8 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       nextFilter?: ReviewFilter;
       window?: TimelineWindow | null;
       duration?: DurationClass | null;
+      durationBounds?: DurationBounds;
+      activity?: ActivityMode;
     } = {},
   ) {
     const summary = options.summary ?? !secondaryActive;
@@ -164,6 +172,8 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
     const nextFilter = options.nextFilter ?? reviewFilter;
     const selectedWindow = options.window === undefined ? focusWindow : options.window;
     const duration = options.duration === undefined ? durationClass : options.duration;
+    const exactDuration = options.durationBounds ?? durationBounds;
+    const activity = options.activity ?? activityMode;
     const query = new URLSearchParams({
       limit: String(PAGE_SIZE), offset: String(nextPage * PAGE_SIZE), review_state: nextFilter,
       summary_only: String(summary),
@@ -173,6 +183,9 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       query.set("to", selectedWindow.end_at);
     }
     if (duration) query.set("duration_class", duration);
+    if (exactDuration.min_ms !== null) query.set("min_duration_ms", String(exactDuration.min_ms));
+    if (exactDuration.max_ms !== null) query.set("max_duration_ms", String(exactDuration.max_ms));
+    if (activity !== "all") query.set("activity_mode", activity);
     const value = await api<TraceSessionResults>(`/trace-sessions/${sessionId}/results?${query}`);
     setResults(value);
     setPage(nextPage);
@@ -190,7 +203,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       }
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [activeSession, working, secondaryActive, page, reviewFilter, focusWindow, durationClass]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSession, working, secondaryActive, page, reviewFilter, focusWindow, durationClass, durationBounds, activityMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function search(event: FormEvent) {
     event.preventDefault();
@@ -212,9 +225,13 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       setReviewFilter("active");
       setFocusWindow(null);
       setDurationClass(null);
+      setDurationBounds(emptyDurationBounds);
+      setDurationDraft({ min: "", max: "" });
+      setActivityMode("all");
       setSecondaryActive(false);
       await loadResults(session.id, {
         summary: true, nextPage: 0, nextFilter: "active", window: null, duration: null,
+        durationBounds: emptyDurationBounds, activity: "all",
       });
     } catch (caught) {
       setError(caught as ApiError);
@@ -265,17 +282,25 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
   }
 
   async function showResults(options: {
-    window?: TimelineWindow | null; duration?: DurationClass | null;
+    window?: TimelineWindow | null;
+    duration?: DurationClass | null;
+    durationBounds?: DurationBounds;
+    activity?: ActivityMode;
   } = {}) {
     if (!activeSession) return;
     const selectedWindow = options.window === undefined ? focusWindow : options.window;
     const duration = options.duration === undefined ? durationClass : options.duration;
+    const exactDuration = options.durationBounds ?? durationBounds;
+    const activity = options.activity ?? activityMode;
     setFocusWindow(selectedWindow);
     setDurationClass(duration);
+    setDurationBounds(exactDuration);
+    setActivityMode(activity);
     setSecondaryActive(true);
     try {
       await loadResults(activeSession.id, {
         summary: false, nextPage: 0, window: selectedWindow, duration,
+        durationBounds: exactDuration, activity,
       });
     } catch (caught) {
       setError(caught as ApiError);
@@ -287,14 +312,38 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
     setSecondaryActive(false);
     setFocusWindow(null);
     setDurationClass(null);
+    setDurationBounds(emptyDurationBounds);
+    setDurationDraft({ min: "", max: "" });
+    setActivityMode("all");
     setReviewFilter("active");
     try {
       await loadResults(activeSession.id, {
         summary: true, nextPage: 0, nextFilter: "active", window: null, duration: null,
+        durationBounds: emptyDurationBounds, activity: "all",
       });
     } catch (caught) {
       setError(caught as ApiError);
     }
+  }
+
+  async function applyDurationRange() {
+    const minimum = durationDraft.min.trim() === "" ? null : Number(durationDraft.min);
+    const maximum = durationDraft.max.trim() === "" ? null : Number(durationDraft.max);
+    if (
+      (minimum !== null && (!Number.isFinite(minimum) || minimum < 0))
+      || (maximum !== null && (!Number.isFinite(maximum) || maximum < 0))
+      || (minimum !== null && maximum !== null && maximum < minimum)
+    ) {
+      setNotice({ tone: "error", text: "请输入有效的事件时长范围，最大值不能小于最小值。" });
+      return;
+    }
+    await showResults({
+      duration: null,
+      durationBounds: {
+        min_ms: minimum === null ? null : Math.round(minimum * 1_000),
+        max_ms: maximum === null ? null : Math.round(maximum * 1_000),
+      },
+    });
   }
 
   async function chooseReviewFilter(next: ReviewFilter) {
@@ -395,7 +444,7 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
 
       <fieldset className="mt-6"><legend className="mb-3 text-sm font-semibold text-slate-700">2. 选择一个摄像机</legend><div className="space-y-5">
         {nvrs.data?.map((nvr) => { const visibleChannels = (channelsByNvr[nvr.id] ?? []).filter((channel) => eligibleChannelIds.has(channel.id)); return <div key={nvr.id}><h3 className="mb-2 text-sm font-bold">{nvr.name} <span className="font-normal text-slate-500">· {visibleChannels.length} 台可用</span></h3>{visibleChannels.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {visibleChannels.map((channel) => { const overlays = selectedRuleOverlays(channel); return <label key={channel.id} className={`cursor-pointer overflow-hidden rounded-2xl border bg-white transition ${selectedChannel === channel.id ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200"}`}><div className="relative"><CameraSnapshot channel={channel} overlays={overlays} /><input className="absolute left-3 top-3 h-5 w-5 accent-emerald-700" type="radio" name="trace-camera" checked={selectedChannel === channel.id} onChange={() => setSelectedChannel(channel.id)} />{overlays.length > 0 && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-semibold text-white">正在显示{eventPresentation(eventType)}规则边界</span>}</div><div className="p-3"><strong className="block text-sm">{channel.alias || channel.device_name || "未命名摄像机"}</strong><small className="text-slate-500">{channel.online ? "在线" : "状态未知 / 离线"} · 通道 {channel.external_channel_id}</small></div></label>; })}
+          {visibleChannels.map((channel) => { const overlays = selectedRuleOverlays(channel); return <label key={channel.id} className={`cursor-pointer overflow-hidden rounded-2xl border bg-white transition ${selectedChannel === channel.id ? "border-emerald-500 ring-2 ring-emerald-200" : "border-slate-200"}`}><div className="relative"><CameraSnapshot channel={channel} overlays={overlays} priority={selectedChannel === channel.id} /><input className="absolute left-3 top-3 h-5 w-5 accent-emerald-700" type="radio" name="trace-camera" checked={selectedChannel === channel.id} onChange={() => setSelectedChannel(channel.id)} />{overlays.length > 0 && <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-1 text-[10px] font-semibold text-white">正在显示{eventPresentation(eventType)}规则边界</span>}</div><div className="p-3"><strong className="block text-sm">{channel.alias || channel.device_name || "未命名摄像机"}</strong><small className="text-slate-500">{channel.online ? "在线" : "状态未知 / 离线"} · 通道 {channel.external_channel_id}</small></div></label>; })}
         </div> : <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">这台 NVR 没有摄像机具备当前所选的全部事件能力。可到设备中心重新扫描事件配置。</div>}</div>; })}
       </div></fieldset>
 
@@ -420,10 +469,21 @@ export function TracePage({ navigate, setNotice }: { navigate: (view: View) => v
       <div className="mb-4"><p className="font-mono text-[10px] tracking-[.18em] text-emerald-700">SECONDARY FILTER</p><h2 className="mt-1 text-2xl font-bold">用事件时间轴缩小范围</h2><p className="mt-1 text-sm text-slate-500">共 {Object.values(results.counts).reduce((sum, value) => sum + value, 0)} 个事件。绿色条块表示事件实际区间，颜色越深表示局部越密集。</p></div>
 
       {Object.values(results.counts).reduce((sum, value) => sum + value, 0) === 0 ? <Empty title="这个时间范围没有返回事件" description="请修改上方时间范围、摄像机或事件类型，再发起一次新的检索。" /> : <div className={`${card} mb-5 p-5`}>
-        {selectedIteration && <EventTimeline from={selectedIteration.from} to={selectedIteration.to} events={results.timeline} selected={focusWindow} onSelect={(window) => void showResults({ window, duration: null })} />}
+        {selectedIteration && <EventTimeline from={selectedIteration.from} to={selectedIteration.to} events={results.timeline} selected={focusWindow} onSelect={(window) => { setDurationDraft({ min: "", max: "" }); void showResults({ window, duration: null, durationBounds: emptyDurationBounds }); }} />}
         {results.timeline_truncated && <p className="mt-2 text-xs text-amber-700">事件超过 2000 个；时间轴仅绘制前 2000 个事件，请缩小初次检索范围。</p>}
-        <div className="mt-5"><strong className="text-sm">事件时长{focusWindow ? " · 已按所选子区间动态更新" : ""}</strong><div className="mt-2 flex flex-wrap gap-2">{durationOptions.filter((option) => results.duration_buckets[option.id] > 0).map((option) => <button type="button" key={option.id} onClick={() => void showResults({ duration: durationClass === option.id ? null : option.id })} className={`rounded-full border px-3 py-2 text-xs font-semibold ${durationClass === option.id ? "border-amber-500 bg-amber-100 text-amber-900" : "border-slate-200 bg-white text-slate-600"}`}>{option.label} {results.duration_buckets[option.id]}</button>)}</div></div>
-        <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4"><Button variant="primary" onClick={() => void showResults({ window: null, duration: null })}>查看全部事件</Button>{secondaryActive && <Button onClick={() => void resetSecondary()}>返回统计，不加载画面</Button>}</div>
+        <div className="mt-5 grid gap-5 border-t border-slate-100 pt-5 lg:grid-cols-2">
+          <div><strong className="text-sm">活动模式{focusWindow ? " · 已按所选子区间动态更新" : ""}</strong><p className="mt-1 text-xs text-slate-500">相邻事件间隔不超过 {results.activity_cluster_gap_ms / 1_000} 秒时归为同一连续触发簇，适合区分偶发报警和持续活动。</p><div className="mt-2 flex flex-wrap gap-2">
+            {([
+              { id: "all" as const, label: "全部", count: results.activity_counts.isolated + results.activity_counts.clustered },
+              { id: "clustered" as const, label: "连续触发", count: results.activity_counts.clustered },
+              { id: "isolated" as const, label: "单次孤立", count: results.activity_counts.isolated },
+            ]).filter((option) => option.id === "all" || option.count > 0).map((option) => <button type="button" key={option.id} onClick={() => void showResults({ activity: option.id })} className={`rounded-full border px-3 py-2 text-xs font-semibold ${activityMode === option.id ? "border-emerald-600 bg-emerald-700 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{option.label} {option.count}</button>)}
+          </div></div>
+          <div><strong className="text-sm">事件时长{focusWindow ? " · 已按所选子区间动态更新" : ""}</strong><div className="mt-2 flex flex-wrap gap-2">{durationOptions.filter((option) => results.duration_buckets[option.id] > 0).map((option) => <button type="button" key={option.id} onClick={() => { setDurationDraft({ min: "", max: "" }); void showResults({ duration: durationClass === option.id ? null : option.id, durationBounds: emptyDurationBounds }); }} className={`rounded-full border px-3 py-2 text-xs font-semibold ${durationClass === option.id ? "border-amber-500 bg-amber-100 text-amber-900" : "border-slate-200 bg-white text-slate-600"}`}>{option.label} {results.duration_buckets[option.id]}</button>)}</div>
+            <div className="mt-3 flex flex-wrap items-end gap-2"><label className="text-xs font-semibold text-slate-600">最短（秒）<input type="number" min="0" max="86400" step="0.1" className={`${field} mt-1 w-28`} value={durationDraft.min} onChange={(event) => setDurationDraft((current) => ({ ...current, min: event.target.value }))} placeholder={results.duration_range.min_ms === null ? "不限" : String(results.duration_range.min_ms / 1_000)} /></label><label className="text-xs font-semibold text-slate-600">最长（秒）<input type="number" min="0" max="86400" step="0.1" className={`${field} mt-1 w-28`} value={durationDraft.max} onChange={(event) => setDurationDraft((current) => ({ ...current, max: event.target.value }))} placeholder={results.duration_range.max_ms === null ? "不限" : String(results.duration_range.max_ms / 1_000)} /></label><Button type="button" onClick={() => void applyDurationRange()}>应用精确时长</Button>{(durationBounds.min_ms !== null || durationBounds.max_ms !== null) && <Button type="button" variant="ghost" onClick={() => { setDurationDraft({ min: "", max: "" }); void showResults({ durationBounds: emptyDurationBounds }); }}>清除</Button>}</div>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4"><Button variant="primary" onClick={() => { setDurationDraft({ min: "", max: "" }); void showResults({ window: null, duration: null, durationBounds: emptyDurationBounds, activity: "all" }); }}>查看全部事件</Button>{secondaryActive && <Button onClick={() => void resetSecondary()}>返回统计，不加载画面</Button>}</div>
       </div>}
 
       {secondaryActive && <>
