@@ -12,7 +12,7 @@ license = { text = "MIT" }
 dependencies = ["tracecue-engine==0.1.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3,<9"]
+dev = ["pytest>=8.3,<10"]
 
 [project.scripts]
 tracecue-gateway = "tracecue_gateway.cli:main"
