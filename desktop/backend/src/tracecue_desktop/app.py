@@ -21,6 +21,7 @@ from tracecue_engine import MAX_TIMELINE_BYTES
 from . import __version__
 from .config import AppConfig
 from .errors import AppError
+from .fusion_events import fusion_events
 from .schemas import (
     BindingRequest,
     ChannelPatchRequest,
@@ -119,6 +120,10 @@ def create_app(
         )
 
     api = "/api/v1"
+
+    @app.get(api + "/fusion-events")
+    def get_fusion_events() -> dict:
+        return fusion_events()
 
     @app.get(api + "/status")
     def status() -> dict:

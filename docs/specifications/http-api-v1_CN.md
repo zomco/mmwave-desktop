@@ -14,6 +14,12 @@ GET    /api/v1/diagnostics
 GET    /api/v1/diagnostics/export
 ```
 
+```text
+GET    /api/v1/fusion-events
+```
+
+`fusion-events` 代理只监听回环地址的常驻回查服务。返回 `{available, events}`，不跟随非回环 URL。常驻服务未启动时返回 `available: false` 和空列表，而不是去检索 NVR。
+
 `status` 返回应用版本、schema 版本、FFmpeg 可用性和迁移/恢复状态，不得暴露文件系统秘密。
 
 设置包含闭区间 `0..23` 内的整数 `night_start_hour` 和 `night_end_hour`。它们表示界面夜间快捷操作使用的本机墙上时钟边界；持久检索范围仍使用 UTC 毫秒，API 时间戳仍为带明确偏移的 RFC 3339。

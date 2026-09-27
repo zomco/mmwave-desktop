@@ -8,12 +8,12 @@
 
 TraceCue 帮助非极客型公寓和小物业运营者更快找到相关 NVR 录像。必须保持以下不变量：
 
-1. NVR 是权威录像存储；TraceCue 索引的是元数据书签。
+1. 主回查是直播流上的本地抓拍和短片（[ADR-0008](docs/architecture/decisions/0008-local-clip-review_CN.md)）。NVR 是可选冷存档，不是默认 seek 路径。
 2. Desktop 服务默认只监听 `127.0.0.1`。
 3. 媒体处理使用 FFmpeg 和浏览器视频能力，不在 Python 中解码或渲染视频。
 4. 仅有 NVR 同源数据时，不得宣传为高置信降误报。
 5. `desktop`、`gateway`、`engine` 共用单仓，但接口边界必须明确。
-6. TraceCue 必须在没有 Home Assistant 和任何 `mmwave-*` 仓库时独立构建运行。
+6. TraceCue 必须在没有 Home Assistant 时构建运行。唯一允许的毫米波运行时依赖是 `mmwave-engine` 包（[ADR-0008](docs/architecture/decisions/0008-local-clip-review_CN.md)）。不要导入 `mmwave-fusion`。
 7. 历史传感器时间轴需要常驻生产者；按需启动的 desktop 无法补录错过的雷达历史。
 
 ## 修改前

@@ -13,8 +13,9 @@ Users buy or install TraceCue, not three unrelated products. Internally, modules
 | `mmwave-component` | Protocol knowledge, device transforms, boundary filtering, fixtures | ESPHome/HA runtime dependency |
 | `mmwave-card` | Calibration UX, room/zone editor, coordinate convention | Lovelace/HA entity runtime dependency |
 | `mmwave-fusion` | Tracking, trajectory quality, `traverse` reasoning, golden exports | Importing the HA integration or its database schema as a product API |
+| `mmwave-engine` | The same tracking core as a pip package | Treating presence-only sensors as fusion tracks |
 
-TraceCue may port algorithms with provenance and license review, consume exported `timeline.v1`, and use the Lab for golden validation. It must not add submodules or imports that are required to build/run the product.
+TraceCue may depend on the published `mmwave-engine` package ([ADR-0008](decisions/0008-local-clip-review.md)). It must not import Home Assistant or `mmwave-fusion`.
 
 ## Open-source boundary
 

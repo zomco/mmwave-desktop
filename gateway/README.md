@@ -14,7 +14,7 @@ Gateway is the always-on timeline producer for sensor-backed deployments. It is 
 
 ## Does not own
 
-- NVR credentials, recording searches or FFmpeg media export.
+- NVR credentials or NVR timeline search. Live-stream stills use an FFmpeg argument array, not a shell.
 - Desktop UI/business workflows.
 - Home Assistant as a required runtime.
 
@@ -35,4 +35,4 @@ python -m pip install -e ./engine -e "./gateway[dev]"
 python -m pytest gateway/tests
 ```
 
-No physical radar/model has been certified. The JSON-line adapter is explicitly experimental; a supported hardware adapter requires protocol fixtures, license/provenance review and repeatable unattended hardware evidence.
+No physical radar/model has been certified. The JSON-line adapter is explicitly experimental. The fusion review loop (`fusion_review.py`) accepts a v1 target frame and calls `mmwave-engine`. Presence-only sensors are not fusion tracks. See [resident service](../docs/operations/resident.md).

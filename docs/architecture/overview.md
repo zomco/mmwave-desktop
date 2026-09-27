@@ -17,7 +17,7 @@ flowchart LR
   Timeline --> Desktop
 ```
 
-Desktop serves the SPA and HTTP API from one local process. It runs on demand and binds to loopback by default. Gateway is an always-on producer only for deployments that require historical sensor intervals. Engine is a vendor-neutral library embedded into a producer or import path.
+Desktop serves the SPA and HTTP API from one local process and binds to loopback by default. The always-on fusion review service keeps radar history and local stills when the UI is closed ([ADR-0008](decisions/0008-local-clip-review.md)). NVR RTSP playback remains an optional cold archive.
 
 ## Responsibility boundaries
 

@@ -18,7 +18,7 @@ export function SettingsPage({ setNotice }: { setNotice: NoticeSetter }) {
     catch (caught) { setError(caught as ApiError); }
   }
   return <>
-    <Header eyebrow="LOCAL SETTINGS" title="设置与诊断" description="主导航只保留事件检索、设备、候选导出。Gateway/Engine 的来源映射与对照评估暂收进高级能力，不干扰当前主流程。" />
+    <Header eyebrow="LOCAL SETTINGS" title="设置与诊断" description="主路径是雷达回查。事件检索是 NVR 冷存档，可能很慢。Gateway 来源映射仍收在高级能力里。" />
     <Problem error={error ?? status.error ?? settings.error ?? diagnostics.error} />
     <div className="grid gap-5 xl:grid-cols-2">
       <form onSubmit={save} className={`${card} p-6`}><h2 className="text-xl font-bold">片段与检索窗口</h2><div className="mt-5 grid gap-4 sm:grid-cols-2">{draft && <><NumberField label="片段配额（字节）" value={draft.clip_quota_bytes} min={104857600} onChange={(value) => setDraft({ ...draft, clip_quota_bytes: value })} /><NumberField label="默认前滚（毫秒）" value={draft.pre_roll_ms} min={0} onChange={(value) => setDraft({ ...draft, pre_roll_ms: value })} /><NumberField label="默认后滚（毫秒）" value={draft.post_roll_ms} min={0} onChange={(value) => setDraft({ ...draft, post_roll_ms: value })} /><NumberField label="首选端口" value={draft.preferred_port} min={1024} max={65535} onChange={(value) => setDraft({ ...draft, preferred_port: value })} /><NumberField label="夜间开始小时（0–23）" value={draft.night_start_hour} min={0} max={23} onChange={(value) => setDraft({ ...draft, night_start_hour: value })} /><NumberField label="夜间结束小时（0–23）" value={draft.night_end_hour} min={0} max={23} onChange={(value) => setDraft({ ...draft, night_end_hour: value })} /></>}</div><p className="mt-3 text-xs leading-5 text-slate-500">“昨晚”和前后夜快捷检索使用本机时区及这里的夜间边界；默认 18:00–次日 06:00。</p><Button className="mt-5" variant="primary" type="submit">保存设置</Button></form>

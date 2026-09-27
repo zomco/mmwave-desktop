@@ -17,7 +17,7 @@ flowchart LR
   Timeline --> Desktop
 ```
 
-Desktop 在同一本地进程中提供 SPA 和 HTTP API，按需启动并默认监听回环地址。只有需要历史传感器 Interval 的部署才需要常驻 Gateway。Engine 是嵌入生产者或导入路径的厂商无关库。
+Desktop 在同一本地进程中提供 SPA 和 HTTP API，默认监听回环地址。常驻融合回查服务在界面关闭后仍保存雷达历史和本地抓拍（[ADR-0008](decisions/0008-local-clip-review_CN.md)）。NVR RTSP 回放仍是可选冷存档。
 
 ## 职责边界
 

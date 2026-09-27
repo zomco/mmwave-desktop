@@ -11,5 +11,6 @@
 | [0005](0005-initial-implementation-stack_CN.md) | 待决 | 采用初始 Python/FastAPI、React/TypeScript 与 FFmpeg 技术栈 |
 | [0006](0006-temporary-lan-clip-sharing_CN.md) | 已接受 | 允许用户显式开启仅限单个已生成片段、带令牌的临时局域网分享 |
 | [0007](0007-event-scoped-visual-validation_CN.md) | 已接受 | 对有界 NVR 事件窗口增加可选的本地视觉验证 |
+| [0008](0008-local-clip-review_CN.md) | 已接受 | 主回查是本地抓拍/短片；NVR 是冷存档 |
 
 ADR 使用不可变编号。若要改变已接受结论，应新增 ADR 取代，而不是静默改写原结论。

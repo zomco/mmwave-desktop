@@ -14,6 +14,12 @@ GET    /api/v1/diagnostics
 GET    /api/v1/diagnostics/export
 ```
 
+```text
+GET    /api/v1/fusion-events
+```
+
+`fusion-events` proxies the loopback resident review service. It returns `{available, events}` and never follows a non-loopback URL. A stopped resident yields `available: false` and an empty list, not an NVR search.
+
 `status` reports application version, schema version, FFmpeg availability and migration/recovery state. It must not expose filesystem secrets.
 
 Settings include `night_start_hour` and `night_end_hour` integers in the inclusive range `0..23`. They describe local wall-clock boundaries used by the UI's overnight shortcuts; stored search bounds remain UTC milliseconds and API timestamps remain RFC 3339 with explicit offsets.

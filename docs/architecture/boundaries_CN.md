@@ -13,8 +13,9 @@
 | `mmwave-component` | 协议知识、设备坐标变换、边界过滤、fixture | ESPHome/HA 运行时依赖 |
 | `mmwave-card` | 校准 UX、房间/区域编辑器、坐标约定 | Lovelace/HA 实体运行时依赖 |
 | `mmwave-fusion` | 跟踪、轨迹质量、`traverse` 判断、金样导出 | import HA 集成，或把其数据库 schema 当作产品 API |
+| `mmwave-engine` | 同一套跟踪核心的 pip 包 | 把只有有人/无人的传感器当成融合轨迹 |
 
-TraceCue 可以在注明来源并完成许可证检查后迁移算法、读取导出的 `timeline.v1`，并用 Lab 做金样验证。不得添加产品构建/运行所必需的子模块或 import。
+TraceCue 可以依赖已发布的 `mmwave-engine` 包（[ADR-0008](decisions/0008-local-clip-review_CN.md)）。不得导入 Home Assistant 或 `mmwave-fusion`。
 
 ## 开源边界
 

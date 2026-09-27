@@ -6,7 +6,9 @@ All notable changes will be documented here after the first implementation miles
 
 ## Unreleased
 
-- Rebuilt the primary SPA as modular React/TypeScript with Tailwind CSS, with event search, device center, candidates/exports and settings as the four main views.
+- Accepted ADR-0008: local stills and short clips are the primary review path; NVR timeline search is a cold archive.
+- Added a loopback fusion-review resident that ingests v1 radar frames through `mmwave-engine` and keeps events while the UI is closed.
+- Rebuilt the primary SPA as modular React/TypeScript with Tailwind CSS. Radar review is the home view; NVR event search is the cold-archive view.
 - Added bounded ONVIF/private-subnet NVR discovery, read-only event/rule/notification audits and SADP/HiTools migration guidance.
 - Added target-area search presets, normalized NVR event filters, search-scoped results, atomic one-frame previews and event/search provenance on exported clips.
 - Accepted ADR-0004 and aligned the monorepo/package metadata on the MIT License.

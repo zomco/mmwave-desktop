@@ -8,12 +8,12 @@ Read this file completely before changing the repository. Then read the document
 
 TraceCue helps non-enthusiast apartment and small-property operators find relevant NVR recordings faster. Preserve these invariants:
 
-1. The NVR is the authoritative video store; TraceCue indexes metadata bookmarks.
+1. Primary review is a local still and short clip from the live stream ([ADR-0008](docs/architecture/decisions/0008-local-clip-review.md)). The NVR is an optional cold archive, not the default seek path.
 2. The default desktop service binds to `127.0.0.1`.
 3. Media work uses FFmpeg and browser video, not Python frame decoding/rendering.
 4. NVR-only data must not be marketed as high-confidence false-positive reduction.
 5. `desktop`, `gateway` and `engine` share this monorepo but keep explicit interfaces.
-6. TraceCue must build and run without Home Assistant or any `mmwave-*` repository.
+6. TraceCue must build and run without Home Assistant. The only allowed mmWave runtime dependency is the `mmwave-engine` package ([ADR-0008](docs/architecture/decisions/0008-local-clip-review.md)). Do not import `mmwave-fusion`.
 7. Historical sensor timelines require an always-on producer; an on-demand desktop app cannot reconstruct missed radar history.
 
 ## Before editing

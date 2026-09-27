@@ -18,6 +18,19 @@ def client(services) -> TestClient:
     return TestClient(create_app(services.config, services=services, start_worker=False))
 
 
+def test_fusion_events_do_not_search_an_nvr_when_resident_is_down(services, monkeypatch) -> None:
+    monkeypatch.setenv("TRACECUE_FUSION_URL", "http://127.0.0.1:9/events")
+    response = client(services).get("/api/v1/fusion-events")
+    assert response.status_code == 200
+    assert response.json() == {"available": False, "events": []}
+
+
+def test_fusion_events_refuse_a_public_proxy_url(services, monkeypatch) -> None:
+    monkeypatch.setenv("TRACECUE_FUSION_URL", "http://203.0.113.8/events")
+    response = client(services).get("/api/v1/fusion-events")
+    assert response.json()["available"] is False
+
+
 def test_status_reports_schema_and_media_without_paths(services) -> None:
     response = client(services).get("/api/v1/status")
     assert response.status_code == 200

@@ -14,7 +14,7 @@ Gateway 是传感器版本中的常驻时间轴生产者。初期它是 TraceCue
 
 ## 不负责
 
-- NVR 凭据、录像检索或 FFmpeg 媒体导出；
+- NVR 凭据或 NVR 时间轴检索。直播抓拍使用 FFmpeg 参数数组，不经过 shell。
 - Desktop UI/业务工作流；
 - 将 Home Assistant 作为必需运行时。
 
@@ -35,4 +35,4 @@ python -m pip install -e ./engine -e "./gateway[dev]"
 python -m pytest gateway/tests
 ```
 
-尚无任何实体雷达/型号通过认证。JSON-line 适配器明确属于实验性能力；受支持硬件适配器必须补充协议 fixture、许可证/来源审查和可重复的无人值守硬件证据。
+尚无任何实体雷达/型号通过认证。JSON-line 适配器明确属于实验性能力。融合回查环（`fusion_review.py`）接收 v1 目标帧并调用 `mmwave-engine`。只有有人/无人的传感器不进入融合轨迹。见[常驻服务](../docs/operations/resident_CN.md)。
