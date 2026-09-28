@@ -2,7 +2,7 @@
 
 [中文](implementation-status_CN.md)
 
-This is the evidence-backed status of the `0.1.0` development baseline. "Implemented" means exercised by local/fixture tests; it does not upgrade an untested hardware combination to supported.
+This is the evidence-backed status of the `0.1.0` development baseline. "Implemented" means exercised by local/fixture tests; it does not upgrade an untested hardware combination to supported. Product roles of `mmwave-engine` and `tracecue-engine` are [ADR-0009](../architecture/decisions/0009-radar-tag-outranks-nvr.md), not this table.
 
 ## Baseline found on 2026-08-12
 

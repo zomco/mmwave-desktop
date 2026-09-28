@@ -6,6 +6,7 @@
 
 ## 未发布
 
+- 接受 ADR-0009：雷达标签权重大于 NVR 标签。`tracecue-engine` 是离线参考，不是 `mmwave-engine` 的运行时助手。原始 NVR 标签不是训练真值。
 - 接受 ADR-0008：本地抓拍和短片是主回查路径；NVR 时间轴检索是冷存档。
 - 新增只监听回环地址的融合回查常驻服务，经 `mmwave-engine` 接收 v1 雷达帧，界面关闭后仍保留事件。
 - 使用模块化 React/TypeScript + Tailwind CSS 重构主 SPA。雷达回查是首页；NVR 事件检索是冷存档页。

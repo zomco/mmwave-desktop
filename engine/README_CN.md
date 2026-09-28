@@ -2,7 +2,9 @@
 
 [English](README.md)
 
-Engine 是 Desktop 导入路径和 Gateway 生产者共用的厂商无关 Interval 核心。它是库与契约实现，不是面向用户的独立进程。
+Engine（`tracecue-engine`）是 Desktop 导入路径和 Gateway 生产者共用的厂商无关 Interval 库。它不是面向用户的独立进程，也不是雷达跟踪器。权重最高的视频标签是单独的 `mmwave-engine` 包（[ADR-0009](../docs/architecture/decisions/0009-radar-tag-outranks-nvr_CN.md)）。
+
+这个库以后可以导出离线 `timeline.v1` 参考，把雷达事件、清洗后的 NVR 时间段和人工复核结论对齐。原始 NVR 标签不是这份参考。`mmwave-engine` 不得导入本包。
 
 ## 负责
 

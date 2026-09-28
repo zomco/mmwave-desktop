@@ -15,6 +15,7 @@ TraceCue helps non-enthusiast apartment and small-property operators find releva
 5. `desktop`, `gateway` and `engine` share this monorepo but keep explicit interfaces.
 6. TraceCue must build and run without Home Assistant. The only allowed mmWave runtime dependency is the `mmwave-engine` package ([ADR-0008](docs/architecture/decisions/0008-local-clip-review.md)). Do not import `mmwave-fusion`.
 7. Historical sensor timelines require an always-on producer; an on-demand desktop app cannot reconstruct missed radar history.
+8. `mmwave-engine` is the highest-weight video tag. `tracecue-engine` is the cold-archive timeline and offline reference, not its runtime helper. Raw NVR labels are not training truth ([ADR-0009](docs/architecture/decisions/0009-radar-tag-outranks-nvr.md)).
 
 ## Before editing
 
@@ -31,7 +32,7 @@ TraceCue helps non-enthusiast apartment and small-property operators find releva
 | Product scope or UX | `docs/product/`, then `docs/architecture/boundaries.md` |
 | Desktop/API/NVR/media | `desktop/README.md`, `docs/specifications/http-api-v1.md`, Hikvision and packaging docs |
 | Gateway/radar collection | `gateway/README.md`, architecture overview, timeline spec |
-| Engine/interval logic | `engine/README.md`, timeline spec, data model |
+| Engine/interval logic | `engine/README.md`, [ADR-0009](docs/architecture/decisions/0009-radar-tag-outranks-nvr.md), timeline spec |
 | CI/release/security | `docs/operations/`, `CONTRIBUTING.md`, `SECURITY.md` |
 | Cross-repository mmWave research | `docs/architecture/boundaries.md`; never create a runtime import |
 

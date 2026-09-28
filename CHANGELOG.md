@@ -6,6 +6,7 @@ All notable changes will be documented here after the first implementation miles
 
 ## Unreleased
 
+- Accepted ADR-0009: radar tags outrank NVR labels. `tracecue-engine` is an offline reference, not a runtime helper of `mmwave-engine`. Raw NVR labels are not training truth.
 - Accepted ADR-0008: local stills and short clips are the primary review path; NVR timeline search is a cold archive.
 - Added a loopback fusion-review resident that ingests v1 radar frames through `mmwave-engine` and keeps events while the UI is closed.
 - Rebuilt the primary SPA as modular React/TypeScript with Tailwind CSS. Radar review is the home view; NVR event search is the cold-archive view.

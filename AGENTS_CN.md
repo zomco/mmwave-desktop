@@ -15,6 +15,7 @@ TraceCue 帮助非极客型公寓和小物业运营者更快找到相关 NVR 录
 5. `desktop`、`gateway`、`engine` 共用单仓，但接口边界必须明确。
 6. TraceCue 必须在没有 Home Assistant 时构建运行。唯一允许的毫米波运行时依赖是 `mmwave-engine` 包（[ADR-0008](docs/architecture/decisions/0008-local-clip-review_CN.md)）。不要导入 `mmwave-fusion`。
 7. 历史传感器时间轴需要常驻生产者；按需启动的 desktop 无法补录错过的雷达历史。
+8. `mmwave-engine` 是权重最高的视频标签。`tracecue-engine` 是冷存档时间线和离线参考，不是它的运行时助手。原始 NVR 标签不是训练真值（[ADR-0009](docs/architecture/decisions/0009-radar-tag-outranks-nvr_CN.md)）。
 
 ## 修改前
 
@@ -31,7 +32,7 @@ TraceCue 帮助非极客型公寓和小物业运营者更快找到相关 NVR 录
 | 产品范围或 UX | `docs/product/`，再读 `docs/architecture/boundaries_CN.md` |
 | Desktop/API/NVR/媒体 | `desktop/README_CN.md`、HTTP API、海康兼容和打包文档 |
 | Gateway/雷达采集 | `gateway/README_CN.md`、架构总览、timeline 规范 |
-| Engine/Interval 逻辑 | `engine/README_CN.md`、timeline 规范、数据模型 |
+| Engine/Interval 逻辑 | `engine/README_CN.md`、[ADR-0009](docs/architecture/decisions/0009-radar-tag-outranks-nvr_CN.md)、timeline 规范 |
 | CI/发布/安全 | `docs/operations/`、`CONTRIBUTING_CN.md`、`SECURITY_CN.md` |
 | 跨仓毫米波研究 | `docs/architecture/boundaries_CN.md`；禁止建立运行时 import |
 

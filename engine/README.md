@@ -2,7 +2,9 @@
 
 [中文](README_CN.md)
 
-Engine is the vendor-neutral interval core shared by Desktop import paths and Gateway producers. It is a library and contract implementation, not an end-user process.
+Engine (`tracecue-engine`) is the vendor-neutral interval library for Desktop import paths and Gateway producers. It is not an end-user process, and it is not the radar tracker. The highest-weight video tag is the separate `mmwave-engine` package ([ADR-0009](../docs/architecture/decisions/0009-radar-tag-outranks-nvr.md)).
+
+This library may later export an offline `timeline.v1` reference that aligns radar events, cleaned NVR intervals and human review verdicts. Raw NVR labels are not that reference. `mmwave-engine` must not import this package.
 
 ## Owns
 

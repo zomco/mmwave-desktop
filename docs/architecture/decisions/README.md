@@ -12,5 +12,6 @@
 | [0006](0006-temporary-lan-clip-sharing.md) | Accepted | Allow explicit, token-scoped temporary LAN sharing of one generated clip |
 | [0007](0007-event-scoped-visual-validation.md) | Accepted | Add optional local visual validation for bounded NVR event windows |
 | [0008](0008-local-clip-review.md) | Accepted | Primary review is a local still/clip; NVR is a cold archive |
+| [0009](0009-radar-tag-outranks-nvr.md) | Accepted | Radar tags outrank NVR labels; tracecue-engine is an offline reference |
 
 Use immutable numbered records. Supersede an accepted ADR with a new ADR instead of silently rewriting its conclusion.

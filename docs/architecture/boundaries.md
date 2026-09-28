@@ -13,9 +13,10 @@ Users buy or install TraceCue, not three unrelated products. Internally, modules
 | `mmwave-component` | Protocol knowledge, device transforms, boundary filtering, fixtures | ESPHome/HA runtime dependency |
 | `mmwave-card` | Calibration UX, room/zone editor, coordinate convention | Lovelace/HA entity runtime dependency |
 | `mmwave-fusion` | Tracking, trajectory quality, `traverse` reasoning, golden exports | Importing the HA integration or its database schema as a product API |
-| `mmwave-engine` | The same tracking core as a pip package | Treating presence-only sensors as fusion tracks |
+| `mmwave-engine` | The highest-weight radar tag, as a pip package | NVR events as tracks; importing `tracecue-engine` |
+| `tracecue-engine` | Cold-archive `timeline.v1` and offline reference exports | Runtime helper of `mmwave-engine`; raw NVR labels as training truth |
 
-TraceCue may depend on the published `mmwave-engine` package ([ADR-0008](decisions/0008-local-clip-review.md)). It must not import Home Assistant or `mmwave-fusion`.
+TraceCue may depend on the published `mmwave-engine` package ([ADR-0008](decisions/0008-local-clip-review.md), [ADR-0009](decisions/0009-radar-tag-outranks-nvr.md)). It must not import Home Assistant or `mmwave-fusion`. `mmwave-engine` must not import this repository.
 
 ## Open-source boundary
 

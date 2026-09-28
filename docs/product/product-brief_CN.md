@@ -8,16 +8,16 @@
 
 ## 产品定义
 
-TraceCue 是在用户 Windows 电脑运行的本地 Web 应用。用户添加 NVR、筛选事件时间段，并播放或导出短片。后续接入毫米波等高置信 Interval，将它们作为主书签，按时间和通道定位 NVR 录像。
+TraceCue 是本地回查应用。`mmwave-engine` 用二维雷达轨迹给一次经过打标签，并打开直播流上的抓拍和短片。NVR 自带的区域入侵、越界侦测是以后的低权重提示。它们有大量误报，清洗之后才能给雷达事件排序，或进入离线参考集。NVR 时间轴检索仍是可选冷存档（[ADR-0008](../architecture/decisions/0008-local-clip-review_CN.md)、[ADR-0009](../architecture/decisions/0009-radar-tag-outranks-nvr_CN.md)）。
 
 ```text
-权威 NVR 录像
-      +
-高置信时间段
-      ↓
-可审阅书签
-      ↓
-定位/导出 NVR 短片
+mmwave-engine 标签（权重最高）
+        +
+可选的已清洗 NVR 标签
+        ↓
+抓拍 / 直播短片
+        ↓
+只有短片缺失时才查 NVR 时间轴
 ```
 
 ## 目标客户
@@ -41,7 +41,7 @@ TraceCue 是在用户 Windows 电脑运行的本地 Web 应用。用户添加 NV
 1. 新 Windows 用户按照文档，在一小时内从受支持海康 NVR 看到事件时间轴。
 2. 对受支持 H.264 测试用例，点击事件后 P95 目标为 30 秒内开始播放或得到可播 MP4。
 3. 不要求 Docker、Home Assistant 或云页面直连私网 NVR。
-4. 无 `mmwave-*` 仓库也能构建运行 TraceCue。
+4. NVR 冷存档路径不依赖 `mmwave-*`。雷达回查可以依赖已发布的 `mmwave-engine` 包，且不得把 `mmwave-fusion` 或 `tracecue-engine` 导入该包。
 5. 在人工标注金样中，高置信书签在达到约定重要事件召回率的同时减少审阅量。
 
 ## 非目标
@@ -55,4 +55,4 @@ TraceCue 是在用户 Windows 电脑运行的本地 Web 应用。用户添加 NV
 
 ## 商业形态
 
-TraceCue 是一个产品体系。`desktop` 是主应用；`gateway` 是历史传感器时间轴的配套常驻单元；`engine` 是内部或未来可开放的技术核心。未来可包装为 Basic（NVR 工作流）和 Pro/Radar（desktop + 常驻时间轴生产者）。
+TraceCue 是一个产品体系。`desktop` 是回查应用，`gateway` 是常驻生产者。`mmwave-engine` 是共用的雷达标签。本仓库的 `tracecue-engine` 是冷存档时间线和离线参考导出，不是 `mmwave-engine` 的运行时助手（[ADR-0009](../architecture/decisions/0009-radar-tag-outranks-nvr_CN.md)）。

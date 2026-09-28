@@ -13,9 +13,10 @@
 | `mmwave-component` | 协议知识、设备坐标变换、边界过滤、fixture | ESPHome/HA 运行时依赖 |
 | `mmwave-card` | 校准 UX、房间/区域编辑器、坐标约定 | Lovelace/HA 实体运行时依赖 |
 | `mmwave-fusion` | 跟踪、轨迹质量、`traverse` 判断、金样导出 | import HA 集成，或把其数据库 schema 当作产品 API |
-| `mmwave-engine` | 同一套跟踪核心的 pip 包 | 把只有有人/无人的传感器当成融合轨迹 |
+| `mmwave-engine` | 权重最高的雷达标签，以 pip 包提供 | 把 NVR 事件当轨迹；导入 `tracecue-engine` |
+| `tracecue-engine` | 冷存档 `timeline.v1` 和离线参考导出 | 当 `mmwave-engine` 的运行时助手；把原始 NVR 标签当训练真值 |
 
-TraceCue 可以依赖已发布的 `mmwave-engine` 包（[ADR-0008](decisions/0008-local-clip-review_CN.md)）。不得导入 Home Assistant 或 `mmwave-fusion`。
+TraceCue 可以依赖已发布的 `mmwave-engine` 包（[ADR-0008](decisions/0008-local-clip-review_CN.md)、[ADR-0009](decisions/0009-radar-tag-outranks-nvr_CN.md)）。不得导入 Home Assistant 或 `mmwave-fusion`。`mmwave-engine` 不得导入本仓库。
 
 ## 开源边界
 

@@ -8,16 +8,16 @@ Apartment and small-property operators repeatedly scrub CCTV recordings to find 
 
 ## Product statement
 
-TraceCue is a local Web application that runs on the user's Windows computer. The user adds an NVR, filters event intervals, and plays or exports a short clip. Later, high-confidence intervals from mmWave radar or other sensors become the primary bookmarks and drive time/channel seeks against the NVR.
+TraceCue is a local review application. `mmwave-engine` tags a passage from 2-D radar tracks. That tag opens a still and a short clip from the live camera stream. NVR smart labels, such as region intrusion and line crossing, are a later low-weight hint. They have dense false positives and must be cleaned before they can rank a radar event or enter an offline reference set. Seeking the NVR timeline remains an optional cold archive ([ADR-0008](../architecture/decisions/0008-local-clip-review.md), [ADR-0009](../architecture/decisions/0009-radar-tag-outranks-nvr.md)).
 
 ```text
-Authoritative NVR recording
+mmwave-engine tag (highest weight)
         +
-high-confidence time intervals
+optional cleaned NVR label
         ↓
-reviewable bookmarks
+still / short live clip
         ↓
-seek/export a short NVR clip
+NVR timeline only if the clip is missing
 ```
 
 ## Intended customer
@@ -41,7 +41,7 @@ seek/export a short NVR clip
 1. A new Windows user follows documentation and reaches an event timeline from a supported Hikvision NVR within one hour.
 2. For supported H.264 test cases, a selected event begins playback or yields a playable MP4 within a P95 target of 30 seconds.
 3. No Docker, Home Assistant or cloud page directly accessing a private NVR is required.
-4. TraceCue builds and runs without the `mmwave-*` repositories.
+4. The NVR cold-archive path builds without `mmwave-*`. Radar review may depend on the published `mmwave-engine` package and must not import `mmwave-fusion` or `tracecue-engine` into that package.
 5. In a labelled golden dataset, high-confidence bookmarks reduce review volume while preserving an agreed important-event recall threshold.
 
 ## Non-goals
@@ -55,4 +55,4 @@ seek/export a short NVR clip
 
 ## Commercial shape
 
-TraceCue is one product family. `desktop` is the main application, `gateway` is the optional/required companion for historical sensor timelines, and `engine` is the internal/openable technical core. A practical future packaging model is Basic (NVR workflow) and Pro/Radar (desktop plus always-on timeline producer).
+TraceCue is one product family. `desktop` is the review application. `gateway` is the always-on producer. `mmwave-engine` is the shared radar tag. `tracecue-engine` in this repository is the cold-archive timeline and the offline reference export, not a runtime helper of `mmwave-engine` ([ADR-0009](../architecture/decisions/0009-radar-tag-outranks-nvr.md)).

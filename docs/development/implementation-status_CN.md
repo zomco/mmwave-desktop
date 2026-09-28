@@ -2,7 +2,7 @@
 
 [English](implementation-status.md)
 
-本文记录 `0.1.0` 开发基线的证据化状态。“已实现”表示已经通过本地/fixture 测试，不代表未经测试的硬件组合自动升级为“受支持”。
+本文记录 `0.1.0` 开发基线的证据化状态。“已实现”表示已经通过本地/fixture 测试，不代表未经测试的硬件组合自动升级为“受支持”。`mmwave-engine` 和 `tracecue-engine` 的产品角色见 [ADR-0009](../architecture/decisions/0009-radar-tag-outranks-nvr_CN.md)，不由本表定义。
 
 ## 2026-08-12 初始基线
 
