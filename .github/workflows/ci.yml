@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -13,6 +14,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Docs still run repository-contract. This only decides which code jobs run.
+  # A missing base fails open.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+      gateway: ${{ steps.filter.outputs.gateway }}
+      hikvision: ${{ steps.filter.outputs.hikvision }}
+      desktop_backend: ${{ steps.filter.outputs.desktop_backend }}
+      desktop_frontend: ${{ steps.filter.outputs.desktop_frontend }}
+      windows: ${{ steps.filter.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - id: filter
+        name: Classify changed paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python scripts/ci/classify_ci_paths.py
+
   detect-modules:
     runs-on: ubuntu-latest
     outputs:
@@ -49,8 +73,8 @@ jobs:
         run: python scripts/ci/verify_repo.py
 
   engine:
-    needs: [repository-contract, detect-modules]
-    if: ${{ needs.detect-modules.outputs.engine == 'true' }}
+    needs: [repository-contract, detect-modules, changes]
+    if: ${{ needs.detect-modules.outputs.engine == 'true' && needs.changes.outputs.engine == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,8 +88,8 @@ jobs:
       - run: python -m pytest engine/tests
 
   hikvision:
-    needs: [repository-contract, detect-modules]
-    if: ${{ needs.detect-modules.outputs.hikvision == 'true' }}
+    needs: [repository-contract, detect-modules, changes]
+    if: ${{ needs.detect-modules.outputs.hikvision == 'true' && needs.changes.outputs.hikvision == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -79,8 +103,8 @@ jobs:
       - run: python -m pytest integrations/hikvision/tests
 
   gateway:
-    needs: [repository-contract, detect-modules]
-    if: ${{ needs.detect-modules.outputs.gateway == 'true' }}
+    needs: [repository-contract, detect-modules, changes]
+    if: ${{ needs.detect-modules.outputs.gateway == 'true' && needs.changes.outputs.gateway == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,8 +118,8 @@ jobs:
       - run: python -m pytest gateway/tests
 
   desktop-backend:
-    needs: [repository-contract, detect-modules]
-    if: ${{ needs.detect-modules.outputs.desktop_backend == 'true' }}
+    needs: [repository-contract, detect-modules, changes]
+    if: ${{ needs.detect-modules.outputs.desktop_backend == 'true' && needs.changes.outputs.desktop_backend == 'true' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,8 +133,8 @@ jobs:
       - run: python -m pytest desktop/backend/tests
 
   desktop-frontend:
-    needs: [repository-contract, detect-modules]
-    if: ${{ needs.detect-modules.outputs.desktop_frontend == 'true' }}
+    needs: [repository-contract, detect-modules, changes]
+    if: ${{ needs.detect-modules.outputs.desktop_frontend == 'true' && needs.changes.outputs.desktop_frontend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -124,8 +148,8 @@ jobs:
       - run: npm run build --prefix desktop/frontend
 
   windows-smoke:
-    needs: [repository-contract, detect-modules]
-    if: ${{ needs.detect-modules.outputs.windows == 'true' }}
+    needs: [repository-contract, detect-modules, changes]
+    if: ${{ needs.detect-modules.outputs.windows == 'true' && needs.changes.outputs.windows == 'true' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -135,7 +159,7 @@ jobs:
 
   quality-gate:
     if: ${{ always() }}
-    needs: [detect-modules, repository-contract, engine, hikvision, gateway, desktop-backend, desktop-frontend, windows-smoke]
+    needs: [changes, detect-modules, repository-contract, engine, hikvision, gateway, desktop-backend, desktop-frontend, windows-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Fail on any failed or cancelled dependency

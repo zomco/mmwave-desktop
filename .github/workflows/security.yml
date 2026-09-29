@@ -2,6 +2,7 @@ name: Security
 
 on:
   pull_request:
+    branches: [main]
   push:
     branches: [main]
   schedule:
@@ -12,6 +13,26 @@ permissions:
   contents: read
 
 jobs:
+  # Audit always runs. This only skips CodeQL and dependency review when the
+  # diff cannot affect them. schedule and workflow_dispatch fail open.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      deps: ${{ steps.filter.outputs.deps }}
+      codeql_py: ${{ steps.filter.outputs.codeql_py }}
+      codeql_js: ${{ steps.filter.outputs.codeql_js }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - id: filter
+        name: Classify changed paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python scripts/ci/classify_ci_paths.py
+
   repository-audit:
     runs-on: ubuntu-latest
     steps:
@@ -25,7 +46,8 @@ jobs:
         run: python scripts/ci/verify_repo.py --security
 
   dependency-review:
-    if: ${{ github.event_name == 'pull_request' }}
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.deps == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +55,8 @@ jobs:
 
   codeql:
     name: CodeQL (${{ matrix.language }})
+    needs: changes
+    if: ${{ (matrix.language == 'python' && needs.changes.outputs.codeql_py == 'true') || (matrix.language == 'javascript-typescript' && needs.changes.outputs.codeql_js == 'true') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
