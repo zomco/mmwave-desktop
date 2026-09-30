@@ -64,6 +64,7 @@ jobs:
         language: [python, javascript-typescript]
     permissions:
       security-events: write
+      actions: read
       packages: read
       contents: read
     steps:
