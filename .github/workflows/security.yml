@@ -22,7 +22,7 @@ jobs:
       codeql_py: ${{ steps.filter.outputs.codeql_py }}
       codeql_js: ${{ steps.filter.outputs.codeql_js }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - id: filter
@@ -36,7 +36,7 @@ jobs:
   repository-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
@@ -50,7 +50,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.deps == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/dependency-review-action@v5
 
   codeql:
@@ -68,7 +68,7 @@ jobs:
       packages: read
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}

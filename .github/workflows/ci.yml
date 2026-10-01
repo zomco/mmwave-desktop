@@ -26,7 +26,7 @@ jobs:
       desktop_frontend: ${{ steps.filter.outputs.desktop_frontend }}
       windows: ${{ steps.filter.outputs.windows }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - id: filter
@@ -47,7 +47,7 @@ jobs:
       desktop_frontend: ${{ steps.detect.outputs.desktop_frontend }}
       windows: ${{ steps.detect.outputs.windows }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: detect
         name: Detect implemented module manifests
         shell: bash
@@ -65,7 +65,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -77,7 +77,7 @@ jobs:
     if: ${{ needs.detect-modules.outputs.engine == 'true' && needs.changes.outputs.engine == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -92,7 +92,7 @@ jobs:
     if: ${{ needs.detect-modules.outputs.hikvision == 'true' && needs.changes.outputs.hikvision == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -107,7 +107,7 @@ jobs:
     if: ${{ needs.detect-modules.outputs.gateway == 'true' && needs.changes.outputs.gateway == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -122,7 +122,7 @@ jobs:
     if: ${{ needs.detect-modules.outputs.desktop_backend == 'true' && needs.changes.outputs.desktop_backend == 'true' }}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -137,7 +137,7 @@ jobs:
     if: ${{ needs.detect-modules.outputs.desktop_frontend == 'true' && needs.changes.outputs.desktop_frontend == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -152,7 +152,7 @@ jobs:
     if: ${{ needs.detect-modules.outputs.windows == 'true' && needs.changes.outputs.windows == 'true' }}
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Verify Windows package
         shell: pwsh
         run: ./packaging/windows/build.ps1 -Mode Verify
