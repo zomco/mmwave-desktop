@@ -2,45 +2,77 @@
 
 [English](README.md)
 
-TraceCue 是面向公寓运营和小物业的本地优先录像检索产品。它连接现有 NVR，把事件时间段变成可审阅的书签，并定位或导出对应录像，而不是再建设一套全量视频库。
+面向公寓和小物业的本地优先录像检索。它连接现有 NVR，把事件时间段变成可审阅的书签，并定位或导出对应录像。它不另建一套全量视频库。
 
-产品内部划分为三个部分，但前期保持一个仓库、一个产品体系：
-
-| 部分 | 职责 | 运行形态 |
+| 部分 | 做什么 | 怎么跑 |
 | --- | --- | --- |
-| `desktop` | 本地 Web 界面、NVR 管理、书签审阅、回放和 MP4 导出 | 按需启动的 Windows 应用 |
-| `gateway` | 持续采集雷达/传感器数据，并持久化高置信时间段 | 传感器版本中的常驻伴侣 |
-| `engine` | 厂商无关 Interval 模型、质量门控、合并/过滤规则和 `timeline.v1` | 嵌入式库，不是独立终端产品 |
+| `desktop` | 本地 Web 界面、NVR 设置、书签审阅、回放、MP4 导出 | 需要时启动的 Windows 应用 |
+| `gateway` | 持续采集雷达或传感器，并保存高置信时间段 | 常开，仅传感器部署需要 |
+| `engine` | 与厂商无关的时间段、质量门、`timeline.v1` | 库，不是独立产品 |
 
-## 产品边界
+NVR 仍是录像存储。只用 NVR 事件时，TraceCue 改善的是整理和导出，**不承诺**误报少于 NVR 自己的智能回放。这个差别来自 2D 雷达轨迹。运行时不依赖 Home Assistant、Docker 或毫米波实验室仓库。唯一允许的雷达运行时依赖是 `mmwave-engine` 包。
 
-NVR 始终是权威录像存储。TraceCue 只索引元数据书签，并按需解析媒体；不会持续拉取、转码和保存全部 NVR 录像。
+本仓库有可执行的 `0.1.0` 开发基线。还没有 NVR 型号或雷达型号获得商业认证。见[实现状态](docs/development/implementation-status_CN.md)。
 
-首个交付切片使用海康 ISAPI 和 RTSP。仅使用 NVR 原生事件时，TraceCue 改善的是整理和出片流程，**不承诺**在误报率上显著优于海康原生智能回放。真正差异化来自后续毫米波轨迹等高置信时间轴。
+## 快速使用
 
-TraceCue 运行时不依赖 `mmwave-component`、`mmwave-card`、`mmwave-fusion`、Home Assistant 或 Docker。这些仓库继续作为实验室和技术参考，而不是产品依赖。
+开发者检出和测试见[开发入门](docs/development/getting-started_CN.md)。之后：
 
-## 仓库状态
+```powershell
+python scripts/ci/verify_repo.py
+```
 
-仓库现已包含可执行的 `0.1.0` 开发基线：
+目前没有可以交给住户安装的安装包。二进制发布仍需要第三方声明、签名材料和硬件证据。
 
-- 低依赖 Engine，实现严格的 `timeline.v1`、确定性 Interval 运算和质量门；
-- 具有输入边界和 fixture 测试的海康 ISAPI 适配层；
-- 回环地址 FastAPI/SQLite Desktop 服务与 React/Vite UI、持久化作业、时间轴映射和 FFmpeg 出片流水线；
-- 常驻 Gateway 核心，包含有界 JSON-line 采集、时钟健康、穿越检测、持久化和导出；
-- Windows one-folder/安装器、签名、SBOM 和冒烟测试自动化，并设置显式发布门禁。
+## 文档地图
 
-本地与合成测试验证软件契约，但尚无海康型号/固件或雷达型号获得商业认证；FFmpeg 二进制继续作为 Git 外的打包输入，二进制发布仍需完整第三方源码/声明、签名材料和硬件证据。请查看[实现状态](docs/development/implementation-status_CN.md)、[路线图](docs/product/roadmap_CN.md)和[文档导航](docs/README_CN.md)。
+| 想了解 | 看 |
+| --- | --- |
+| 全部文档 | [文档导航](docs/README_CN.md) |
+| 产品目标和不做的事 | [产品简述](docs/product/product-brief_CN.md) |
+| 系统形态 | [架构总览](docs/architecture/overview_CN.md) |
+| 开发环境 | [开发入门](docs/development/getting-started_CN.md) |
+| 已经实现了什么 | [实现状态](docs/development/implementation-status_CN.md) |
+| 时间轴交换格式 | [timeline.v1](docs/specifications/timeline-v1_CN.md) |
+| HTTP API | [HTTP API v1](docs/specifications/http-api-v1_CN.md) |
+| 为什么雷达标签高于 NVR 标签 | [ADR-0009](docs/architecture/decisions/0009-radar-tag-outranks-nvr_CN.md) |
+| 桌面 / 网关 / 冷归档引擎 | [desktop](desktop/README_CN.md)、[gateway](gateway/README_CN.md)、[engine](engine/README_CN.md) |
+| AI 协作规则 | [AGENTS_CN.md](AGENTS_CN.md) |
 
-## 从这里开始
+## 雷达型号
 
-- 产品目标和约束：[产品简述](docs/product/product-brief_CN.md)
-- 系统形态和边界：[架构总览](docs/architecture/overview_CN.md)
-- 开发者上手：[开发入门](docs/development/getting-started_CN.md)
-- AI 协作说明：[AGENTS_CN.md](AGENTS_CN.md)
-- 时间轴交换格式：[timeline.v1 规范](docs/specifications/timeline-v1_CN.md)
-- CI/CD 与发布门禁：[CI/CD](docs/operations/ci-cd_CN.md)
+TraceCue 的高置信时间轴来自 [mmwave-engine](https://github.com/zomco/mmwave-engine)，不是本仓库 `engine/` 里的库。
 
-## 许可证提示
+**1D 雷达不能使用 mmwave-fusion**，也不能提供用来标记录像的位置轨迹。**2D 雷达可以使用全部功能**，包括融合和这个标签。R60ABD1 同时上报高度，列在 2D 里是因为它可以参与融合。
 
-TraceCue 代码使用 [MIT License](LICENSE)。[ADR-0004](docs/architecture/decisions/0004-licensing-before-contributions_CN.md) 记录了所有者决策和贡献姿态。随包第三方程序和库继续适用各自许可证与声明。
+数字和进度与 [mmwave-component](https://github.com/zomco/mmwave-component/blob/main/README_CN.md) 一致。`—` 表示说明书没有给出。标了「精度」的不是距离门宽度。LD2410 在 0.20 m 分辨率下最远 1.6 m。LD2451 按整米上报。LD2450、LD2454 的距离分辨率在每帧目标里。LD2454 性能表写 8 m，安装章节写跟踪 6 m。
+
+### 1D 雷达
+
+| 型号 | 检测距离 | 距离分辨率 | 开发进度 |
+| --- | --- | --- | --- |
+| LD2410 | 6 m | 0.75 m / 0.20 m | 开发中 |
+| LD2410B | 6 m | 0.75 m（协议亦可设 0.20 m） | 测试中 |
+| LD2410C | 6 m | 0.75 m（协议亦可设 0.20 m） | 测试中 |
+| LD2411 | 2 m（手势 1 m） | — | 开发中 |
+| LD2411S | 6 m（微动 3.5 m） | ±5 cm / ±5%（精度） | 开发中 |
+| LD2412 | 9 m | 0.75 m | 开发中 |
+| LD2420 | 8 m（微动 6 m） | 0.70 m | 开发中 |
+| LD2450A | 2 m | 0.2 m（感知精度） | 开发中 |
+| LD6002 | 1.5 m（呼吸心率） | — | 开发中 |
+| RD-03E | 6 m（微动 3.5 m） | ±5 cm / ±5%（精度） | 开发中 |
+
+### 2D 雷达
+
+| 型号 | 检测距离 | 角度范围 | 距离分辨率 | 开发进度 |
+| --- | --- | --- | --- | --- |
+| LD2450 | 6 m | 方位 ±60°，俯仰 ±35° | 随帧上报 | 开发中 |
+| LD2451 | 100 m | 水平 ±15°，垂直 ±7° | 1 m | 测试中 |
+| LD2452 | 6 m | 方位 ±60°，俯仰 ±30° | 0.72 m | 测试中 |
+| LD2453 | 6 m | 方位 ±40°，俯仰 ±30° | 0.72 m | 开发中 |
+| LD2454 | 8 m | 方位 ±60°，俯仰 ±30° | 随帧上报 | 测试中 |
+| R60ABD1 | 2.5 m（呼吸心率 1.5 m） | ±20° | — | 已完成 |
+
+## 许可证
+
+TraceCue 代码使用 [MIT](LICENSE)。随包第三方程序保留各自许可证。见 [ADR-0004](docs/architecture/decisions/0004-licensing-before-contributions_CN.md)。

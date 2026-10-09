@@ -2,45 +2,77 @@
 
 [中文](README_CN.md)
 
-TraceCue is a local-first video retrieval product for apartments and small property operators. It connects to an existing NVR, turns event intervals into reviewable bookmarks, and seeks or exports the corresponding recording without building a second full-video archive.
+Local-first video retrieval for apartments and small property operators. It connects to an existing NVR, turns event intervals into reviewable bookmarks, and seeks or exports the matching recording. It does not build a second full-video archive.
 
-The product is intentionally split into three internal parts while remaining one repository and one product family:
-
-| Part | Responsibility | Runtime shape |
+| Part | What it does | How it runs |
 | --- | --- | --- |
-| `desktop` | Local Web UI, NVR management, bookmark review, playback and MP4 export | On-demand Windows application |
-| `gateway` | Continuous radar/sensor collection and durable high-confidence intervals | Always-on companion for sensor-backed deployments |
-| `engine` | Vendor-neutral interval model, quality gates, merge/filter rules and `timeline.v1` | Embedded library, not a separate end-user product |
+| `desktop` | Local web UI, NVR setup, bookmark review, playback, MP4 export | Windows app, started when needed |
+| `gateway` | Keeps collecting radar or sensor data and stores high-confidence intervals | Always on, only for sensor-backed installs |
+| `engine` | Vendor-neutral intervals, quality gates, `timeline.v1` | Library, not a separate product |
 
-## Product boundary
+The NVR remains the video store. With only NVR events, TraceCue organizes and exports; it does **not** promise fewer false alarms than the NVR's own smart playback. That difference comes from 2D radar tracks. Runtime does not depend on Home Assistant, Docker, or the mmWave laboratory repositories. The only allowed radar runtime dependency is the `mmwave-engine` package.
 
-The NVR remains the authoritative video store. TraceCue indexes metadata bookmarks and resolves media on demand. It does not continuously ingest or transcode all NVR recordings.
+This repository has an executable `0.1.0` development baseline. No NVR model or radar model is commercially certified yet. See [implementation status](docs/development/implementation-status.md).
 
-The first delivery slice uses Hikvision ISAPI and RTSP. With only NVR-originated events, TraceCue improves organization and export workflow but does **not** promise materially lower false positives than Hikvision's native smart playback. Differentiation comes from later high-confidence timelines such as mmWave trajectories.
+## Quick start
 
-TraceCue is independent from `mmwave-component`, `mmwave-card`, `mmwave-fusion`, Home Assistant and Docker at runtime. Those repositories remain a laboratory and technical reference, not product dependencies.
+Developer checkout and tests are in [Getting started](docs/development/getting-started.md). After that:
 
-## Repository status
+```powershell
+python scripts/ci/verify_repo.py
+```
 
-The repository now contains an executable `0.1.0` development baseline:
+There is no end-user installer to point a household at yet. Binary release still needs third-party notices, signing material, and hardware evidence.
 
-- a dependency-light Engine implementing strict `timeline.v1`, deterministic interval operations and quality gates;
-- a bounded, fixture-tested Hikvision ISAPI adapter;
-- a loopback FastAPI/SQLite Desktop service plus React/Vite UI, persistent jobs, timeline mapping and FFmpeg clip pipeline;
-- an always-on Gateway core with bounded JSON-line acquisition, clock health, traverse detection, persistence and export;
-- Windows one-folder/installer, signing, SBOM and smoke-test automation with an explicit release gate.
+## Documentation map
 
-Local and synthetic tests validate the software contracts. No Hikvision model/firmware or radar model is yet commercially certified, FFmpeg binaries remain packaging inputs outside Git, and binary publication still requires complete third-party source/notices, signing material and hardware evidence. See the [implementation status](docs/development/implementation-status.md), [roadmap](docs/product/roadmap.md) and [documentation map](docs/README.md).
+| If you want | Read |
+| --- | --- |
+| Every document | [Documentation map](docs/README.md) |
+| Product intent and non-goals | [Product brief](docs/product/product-brief.md) |
+| System shape | [Architecture overview](docs/architecture/overview.md) |
+| Developer setup | [Getting started](docs/development/getting-started.md) |
+| What is actually implemented | [Implementation status](docs/development/implementation-status.md) |
+| Timeline interchange | [timeline.v1](docs/specifications/timeline-v1.md) |
+| HTTP API | [HTTP API v1](docs/specifications/http-api-v1.md) |
+| Why a radar tag outranks an NVR label | [ADR-0009](docs/architecture/decisions/0009-radar-tag-outranks-nvr.md) |
+| Desktop / gateway / cold-archive engine | [desktop](desktop/README.md), [gateway](gateway/README.md), [engine](engine/README.md) |
+| AI collaborator rules | [AGENTS.md](AGENTS.md) |
 
-## Start here
+## Radars
 
-- Product intent and constraints: [Product brief](docs/product/product-brief.md)
-- System shape and boundaries: [Architecture overview](docs/architecture/overview.md)
-- Developer onboarding: [Getting started](docs/development/getting-started.md)
-- AI collaborator instructions: [AGENTS.md](AGENTS.md)
-- Timeline interchange: [timeline.v1 specification](docs/specifications/timeline-v1.md)
-- CI/CD and release gates: [CI/CD](docs/operations/ci-cd.md)
+TraceCue's high-confidence timeline comes from [mmwave-engine](https://github.com/zomco/mmwave-engine), not from this repository's `engine/` library.
 
-## License notice
+**1D radars cannot use mmwave-fusion**, and they cannot supply a position track to tag video. **2D radars can use every feature**, including fusion and this tag. R60ABD1 also reports height; it is listed with the 2D models because it can be fused.
 
-TraceCue code is licensed under the [MIT License](LICENSE). [ADR-0004](docs/architecture/decisions/0004-licensing-before-contributions.md) records the owner decision and contribution posture. Bundled third-party programs and libraries retain their own licenses and notices.
+Figures and progress match [mmwave-component](https://github.com/zomco/mmwave-component/blob/main/README.md). `—` means the manual does not state it. A cell marked *accuracy* is not a range-gate width. LD2410 at 0.20 m resolution reaches 1.6 m. LD2451 reports whole metres. LD2450 and LD2454 publish resolution in each target frame. LD2454's performance table says 8 m; the install section says 6 m tracking.
+
+### 1D radars
+
+| Model | Detection distance | Distance resolution | Progress |
+| --- | --- | --- | --- |
+| LD2410 | 6 m | 0.75 m / 0.20 m | Developing |
+| LD2410B | 6 m | 0.75 m (protocol can also select 0.20 m) | Testing |
+| LD2410C | 6 m | 0.75 m (protocol can also select 0.20 m) | Testing |
+| LD2411 | 2 m (gesture 1 m) | — | Developing |
+| LD2411S | 6 m (micro-motion 3.5 m) | ±5 cm / ±5% (accuracy) | Developing |
+| LD2412 | 9 m | 0.75 m | Developing |
+| LD2420 | 8 m (micro-motion 6 m) | 0.70 m | Developing |
+| LD2450A | 2 m | 0.2 m (sensing accuracy) | Developing |
+| LD6002 | 1.5 m (breath / heart) | — | Developing |
+| RD-03E | 6 m (micro-motion 3.5 m) | ±5 cm / ±5% (accuracy) | Developing |
+
+### 2D radars
+
+| Model | Detection distance | Angle | Distance resolution | Progress |
+| --- | --- | --- | --- | --- |
+| LD2450 | 6 m | azimuth ±60°, elevation ±35° | per frame | Developing |
+| LD2451 | 100 m | horizontal ±15°, vertical ±7° | 1 m | Testing |
+| LD2452 | 6 m | azimuth ±60°, elevation ±30° | 0.72 m | Testing |
+| LD2453 | 6 m | azimuth ±40°, elevation ±30° | 0.72 m | Developing |
+| LD2454 | 8 m | azimuth ±60°, elevation ±30° | per frame | Testing |
+| R60ABD1 | 2.5 m (breath / heart 1.5 m) | ±20° | — | Completed |
+
+## License
+
+TraceCue code is [MIT](LICENSE). Bundled third-party programs keep their own licenses. See [ADR-0004](docs/architecture/decisions/0004-licensing-before-contributions.md).
