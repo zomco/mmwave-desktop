@@ -25,6 +25,10 @@ def test_lan_share_serves_only_token_scoped_page_and_bounded_video(tmp_path, mon
             assert response.headers["Referrer-Policy"] == "no-referrer"
             assert "Front door" in page
             assert "video.mp4" in page
+            assert "MMWave · TraceCue" in page
+            assert "#0b825c" in page
+            assert "prefers-color-scheme:dark" in page
+            assert "focus-visible" in page
         video_url = created["url"] + "/video.mp4"
         with urlopen(Request(video_url, headers={"Range": "bytes=10-19"}), timeout=5) as response:
             assert response.status == 206

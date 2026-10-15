@@ -95,8 +95,8 @@ export function ExportsPage({ setNotice }: { setNotice: NoticeSetter }) {
 
   return <>
     <Header eyebrow="CANDIDATE → EXPORT" title="候选与导出" description="确认事件片段后可查看生成进度、下载 MP4，或临时分享给同一局域网内的手机。" action={<Button onClick={() => clips.refresh()}>刷新状态</Button>} />
-    <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm leading-6 text-sky-950"><strong>手机二维码：</strong>点击后才会开启只读临时分享。二维码使用随机令牌、仅能访问当前片段，15 分钟后失效；主 API 仍只监听 127.0.0.1。Windows 防火墙首次可能请求允许当前专用网络访问。</div>
-    <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-950"><strong>时间基准：</strong>事件和片段时间均来自 NVR 事件索引。视频水印由摄像机自身时钟生成；摄像机未与 NVR 同步时可能存在偏差。</div>
+    <div className="mb-5 rounded-2xl border border-sky-200 bg-info-soft px-5 py-4 text-sm leading-6 text-info"><strong>手机二维码：</strong>点击后才会开启只读临时分享。二维码使用随机令牌、仅能访问当前片段，15 分钟后失效；主 API 仍只监听 127.0.0.1。Windows 防火墙首次可能请求允许当前专用网络访问。</div>
+    <div className="mb-5 rounded-2xl border border-amber-300 bg-warning-soft px-5 py-4 text-sm leading-6 text-warning"><strong>时间基准：</strong>事件和片段时间均来自 NVR 事件索引。视频水印由摄像机自身时钟生成；摄像机未与 NVR 同步时可能存在偏差。</div>
     <Problem error={error ?? clips.error} />
     {!clips.loading && clips.data?.length === 0
       ? <Empty title="还没有候选视频" description="在事件检索结果中生成候选视频后，这里会显示可播放片段。" />
@@ -105,23 +105,23 @@ export function ExportsPage({ setNotice }: { setNotice: NoticeSetter }) {
         const transferProgress = downloadProgress[clip.id];
         const shared = shares[clip.id];
         return <article key={clip.id} className={`${card} overflow-hidden`}>
-          <div className="aspect-video bg-[#142e29]">{clip.status === "ready" && clip.content_url
+          <div className="aspect-video bg-media">{clip.status === "ready" && clip.content_url
             ? <video className="h-full w-full bg-black object-contain" src={clip.content_url} controls preload="metadata" />
-            : <div className="grid h-full place-items-center px-8 text-emerald-100/70">{["queued", "generating"].includes(clip.status) ? <div className="w-full"><Spinner label="正在从 NVR 生成候选片段" /><ProgressBar value={generationProgress} label="片段生成进度" dark /></div> : <span>片段生成失败</span>}</div>}</div>
+            : <div className="grid h-full place-items-center px-8 text-brand-100/70">{["queued", "generating"].includes(clip.status) ? <div className="w-full"><Spinner label="正在从 NVR 生成候选片段" /><ProgressBar value={generationProgress} label="片段生成进度" dark /></div> : <span>片段生成失败</span>}</div>}</div>
           <div className="p-5">
             <div className="flex flex-wrap gap-2"><Badge tone={clip.status === "ready" ? "positive" : clip.status === "failed" ? "danger" : "warning"}>{statusLabel(clip.status)}</Badge>{clip.origin?.area_name && <Badge tone="warning">{clip.origin.area_name}</Badge>}</div>
-            <h2 className="mt-3 text-lg font-bold">{clip.origin ? cameraName(clip) : "手动时间窗口"}</h2>
-            <p className="mt-1 text-sm text-slate-600">{formatDateTime(clip.requested_window.start_at)} · {formatDuration(clip.requested_window.start_at, clip.requested_window.end_at)}</p>
-            <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs"><span className="text-slate-500">目标行为</span><strong className="ml-3 text-slate-800">{clip.origin ? eventPresentation(clip.origin.event_type || clip.origin.classification) : "无关联事件"}</strong></div>
-            {clip.origin?.candidate_window_capped && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">片段已按生成时的最大时长限制截短。</p>}
+            <h2 className="mt-3 text-lg font-semibold">{clip.origin ? cameraName(clip) : "手动时间窗口"}</h2>
+            <p className="mt-1 text-sm text-muted">{formatDateTime(clip.requested_window.start_at)} · {formatDuration(clip.requested_window.start_at, clip.requested_window.end_at)}</p>
+            <div className="mt-4 rounded-xl bg-soft p-3 text-xs"><span className="text-muted">目标行为</span><strong className="ml-3 text-ink">{clip.origin ? eventPresentation(clip.origin.event_type || clip.origin.classification) : "无关联事件"}</strong></div>
+            {clip.origin?.candidate_window_capped && <p className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-xs text-warning">片段已按生成时的最大时长限制截短。</p>}
             {transferProgress !== undefined && transferProgress < 1 && <ProgressBar value={transferProgress} label="下载到电脑" />}
             <div className="mt-4 grid grid-cols-2 gap-2">
               {clip.content_url && <Button variant="primary" disabled={transferProgress !== undefined && transferProgress < 1} onClick={() => void download(clip)}>{transferProgress !== undefined && transferProgress < 1 ? `下载 ${Math.round(transferProgress * 100)}%` : "下载 MP4"}</Button>}
               {clip.content_url && <Button disabled={sharing === clip.id} onClick={() => void share(clip)}>{sharing === clip.id ? "生成中…" : shared ? "刷新二维码" : "手机二维码"}</Button>}
               <Button className="col-span-2" variant="danger" onClick={() => remove(clip)}>删除</Button>
             </div>
-            {shared && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center"><img className="mx-auto h-56 w-56 rounded-lg bg-white p-2" src={shared.qrDataUrl} alt="手机查看视频二维码" /><p className="mt-2 text-xs leading-5 text-emerald-900">手机连接同一局域网后，用微信扫一扫。有效至 {formatDateTime(shared.share.expires_at)}。</p></div>}
-            {clip.status === "ready" && <p className="mt-3 text-xs text-slate-500">{clip.video_codec || "视频"} · {clip.audio_codec || "无音频/未知"} · {formatBytes(clip.size_bytes)}</p>}
+            {shared && <div className="mt-4 rounded-2xl border border-brand-200 bg-brand-600/10 p-4 text-center"><img className="mx-auto h-56 w-56 rounded-lg bg-surface p-2" src={shared.qrDataUrl} alt="手机查看视频二维码" /><p className="mt-2 text-xs leading-5 text-accent">手机连接同一局域网后，用微信扫一扫。有效至 {formatDateTime(shared.share.expires_at)}。</p></div>}
+            {clip.status === "ready" && <p className="mt-3 text-xs text-muted">{clip.video_codec || "视频"} · {clip.audio_codec || "无音频/未知"} · {formatBytes(clip.size_bytes)}</p>}
           </div>
         </article>;
       })}</div>}
@@ -130,7 +130,7 @@ export function ExportsPage({ setNotice }: { setNotice: NoticeSetter }) {
 
 function ProgressBar({ value, label, dark = false }: { value: number; label: string; dark?: boolean }) {
   const percent = Math.max(0, Math.min(100, Math.round(value * 100)));
-  return <div className="mt-3" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><div className={`h-2 overflow-hidden rounded-full ${dark ? "bg-white/15" : "bg-slate-200"}`}><div className="h-full rounded-full bg-emerald-400 transition-[width]" style={{ width: `${Math.max(3, percent)}%` }} /></div><p className={`mt-1 text-center font-mono text-[10px] ${dark ? "text-emerald-100/70" : "text-slate-500"}`}>{label} {percent}%</p></div>;
+  return <div className="mt-3" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><div className={`h-2 overflow-hidden rounded-full ${dark ? "bg-white/15" : "bg-line"}`}><div className="h-full rounded-full bg-brand-400 transition-[width]" style={{ width: `${Math.max(3, percent)}%` }} /></div><p className={`mt-1 text-center font-mono text-xs ${dark ? "text-brand-100/70" : "text-muted"}`}>{label} {percent}%</p></div>;
 }
 
 function statusLabel(status: Clip["status"]) {

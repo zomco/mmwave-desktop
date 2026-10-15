@@ -23,8 +23,8 @@ export function RadarPage() {
     <div className="grid gap-3">
       {events.data?.events.map((item) => <article key={item.event_id} className={`${card} px-4 py-3`}>
         <strong>{item.zone_id}</strong>
-        <span className="ml-3 font-mono text-xs text-slate-500">{item.event_type}</span>
-        {item.snapshot_path && <p className="mt-1 font-mono text-xs text-slate-500">{item.snapshot_path}</p>}
+        <span className="ml-3 font-mono text-xs text-muted">{item.event_type}</span>
+        {item.snapshot_path && <p className="mt-1 font-mono text-xs text-muted">{item.snapshot_path}</p>}
       </article>)}
     </div>
   </>;

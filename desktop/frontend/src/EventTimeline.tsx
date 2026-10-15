@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import type { TraceTimelineEvent } from "./types";
 import { Button } from "./ui";
 
@@ -129,7 +129,7 @@ export function EventTimeline({
 
   return <div>
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div><strong className="text-sm">事件时间轴</strong><p className="mt-1 text-xs text-slate-500">所有事件绘制在同一轨道；点击事件条或拖放子区间。在时间轴上滚动只缩放时间轴，不滚动页面。</p></div>
+      <div><strong className="text-sm">事件时间轴</strong><p className="mt-1 text-xs text-muted">所有事件绘制在同一轨道；点击事件条或拖放子区间。在时间轴上滚动只缩放时间轴，不滚动页面。</p></div>
       <Button type="button" variant="ghost" onClick={() => setViewport(base)} disabled={viewport.start === base.start && viewport.end === base.end}>复位缩放</Button>
     </div>
     <div
@@ -137,14 +137,14 @@ export function EventTimeline({
       data-testid="event-timeline-surface"
       role="application"
       aria-label="事件时间轴交互区"
-      className="relative mt-3 h-24 touch-none select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-950"
+      className="ui-timeline relative mt-3 h-24 touch-none select-none overflow-hidden rounded-xl"
       onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const value = coordinate(event); setDragStart(value); setDragCurrent(value); }}
       onPointerMove={(event) => { if (dragStart !== null) setDragCurrent(coordinate(event)); }}
       onPointerUp={finishDrag}
       onPointerCancel={() => { setDragStart(null); setDragCurrent(null); }}
     >
       <div className="absolute inset-x-3 top-2 bottom-7">
-        {density.bins.map((count, index) => count > 0 && <span key={index} className="absolute bottom-0 top-0 bg-emerald-400" style={{ left: `${index / density.bins.length * 100}%`, width: `${100 / density.bins.length}%`, opacity: 0.04 + count / density.max * 0.12 }} />)}
+        {density.bins.map((count, index) => count > 0 && <span key={index} className="absolute bottom-0 top-0 bg-brand-400" style={{ left: `${index / density.bins.length * 100}%`, width: `${100 / density.bins.length}%`, opacity: 0.04 + count / density.max * 0.12 }} />)}
         {visible.map(({ event, start, end }) => {
           const left = Math.max(0, (start - viewport.start) / span * 100);
           const width = Math.max(0.35, (Math.min(end, viewport.end) - Math.max(start, viewport.start)) / span * 100);
@@ -155,8 +155,8 @@ export function EventTimeline({
             key={event.id}
             title={`${timelineLabel(start, span)} – ${timelineLabel(end, span)}`}
             aria-label={`选择 ${timelineLabel(start, span)} 开始的事件`}
-            className="absolute top-3 h-7 rounded-sm border border-emerald-100/70 shadow-sm transition hover:z-20 hover:bg-amber-300"
-            style={{ left: `${left}%`, width: `${width}%`, backgroundColor: `rgba(16, 185, 129, ${0.48 + intensity * 0.48})` }}
+            className="ui-event absolute top-3 h-7 rounded-sm border border-brand-600/30 shadow-sm transition hover:z-20"
+            style={{ left: `${left}%`, width: `${width}%`, "--event-intensity": 0.48 + intensity * 0.48 } as CSSProperties}
             onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
             onClick={() => onSelect({ start_at: event.start_at, end_at: event.end_at })}
           />;
@@ -164,8 +164,8 @@ export function EventTimeline({
         {selected && selectionLeft < 100 && selectionLeft + selectionWidth > 0 && <span className="pointer-events-none absolute inset-y-0 border-2 border-amber-300 bg-amber-300/15" style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />}
         {dragStart !== null && <span className="pointer-events-none absolute inset-y-0 border-2 border-sky-300 bg-sky-300/20" style={{ left: `${draftLeft}%`, width: `${draftWidth}%` }} />}
       </div>
-      <div className="absolute inset-x-3 bottom-2 flex justify-between font-mono text-[10px] text-slate-300">{Array.from({ length: 5 }, (_, index) => <span key={index}>{timelineLabel(viewport.start + span * index / 4, span)}</span>)}</div>
+      <div className="absolute inset-x-3 bottom-2 flex justify-between font-mono text-xs text-muted">{Array.from({ length: 5 }, (_, index) => <span key={index}>{timelineLabel(viewport.start + span * index / 4, span)}</span>)}</div>
     </div>
-    <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-slate-500"><span>当前尺度：{timelineLabel(viewport.start, span)} – {timelineLabel(viewport.end, span)}</span><span>{visible.length} 个可见事件</span></div>
+    <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-muted"><span>当前尺度：{timelineLabel(viewport.start, span)} – {timelineLabel(viewport.end, span)}</span><span>{visible.length} 个可见事件</span></div>
   </div>;
 }
